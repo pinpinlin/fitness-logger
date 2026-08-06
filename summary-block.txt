@@ -1,0 +1,28 @@
+```dataviewjs
+const raw = await dv.io.load(dv.current().file.path);
+const rows = [];
+for (const line of raw.split('\n')) {
+  const nm = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+  const setsM = line.match(/\(組::\s*([^)]+)\)/);
+  if (!nm || !setsM) continue;                       // 只處理有「組」的行
+  const name = nm[1].trim();
+  const typeM = line.match(/\(型式::\s*([^)]+)\)/);
+  const type = typeM ? typeM[1].trim() : '';
+  const tokens = setsM[1].split(',').map(s => s.trim()).filter(Boolean);
+  let best = null; const disp = []; const rpes = [];
+  for (const t of tokens) {
+    const mm = t.match(/^(?:(自重|[\d.]+)\s*[×x]\s*)?([\d+]+)(?:@([\d.]+))?$/);
+    if (!mm) { disp.push(t); continue; }
+    const w = (mm[1] && mm[1] !== '自重') ? parseFloat(mm[1]) : 0;
+    const repsNum = parseInt(mm[2]);
+    const lbl = w ? `${mm[1]}×${mm[2]}` : `自重×${mm[2]}`;
+    disp.push(lbl);
+    if (!best || w > best.w || (w === best.w && repsNum > best.r)) best = { w, r: repsNum, str: lbl };
+    if (mm[3]) rpes.push(parseFloat(mm[3]));
+  }
+  const avgRpe = rpes.length ? (Math.round(rpes.reduce((a, b) => a + b, 0) / rpes.length * 10) / 10) : '';
+  const avgCell = avgRpe === '' ? '' : `<div style="text-align:center">${avgRpe}</div>`;
+  rows.push([dv.fileLink(name), type, disp.join(' ｜ '), best ? best.str : '', avgCell]);
+}
+dv.table(['動作', '型式', '各組（重量×次數）', '最重組', '平均RPE'], rows);
+```
