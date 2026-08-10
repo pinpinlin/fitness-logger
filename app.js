@@ -141,7 +141,7 @@ function renderLog() {
         <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
       ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
       ${sets}
-      <div class="row" style="margin-top:8px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>
+      <div class="row srow" style="margin-top:6px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>
       <input class="note-input" data-inp="note" data-e="${ei}" placeholder="動作備註（座椅高度／體感…）" value="${esc(e.note)}">
     </div>`;
   }).join('');
@@ -160,22 +160,21 @@ function setBlock(e, ei, s, si) {
   const wVal = (s.weight === null || s.weight === undefined) ? '' : s.weight;
   const rVal = (s.reps === null || s.reps === undefined) ? '' : s.reps;
   const rpeVal = (s.rpe === null || s.rpe === undefined) ? '' : s.rpe;
-  const bw = wVal === '' ? '<span class="bw">自重</span>' : '';
-  return `<div class="setblk" style="border-top:1px solid var(--line);padding-top:8px;margin-top:8px">
-    <div class="row"><span class="muted small">第 ${si + 1} 組</span>${bw}<span class="spacer"></span>
-      <button class="tiny ghost" data-act="rmSet" data-e="${ei}" data-s="${si}">刪組</button></div>
-    <div class="row" style="margin-top:6px">
-      <span class="muted small" style="width:34px">重量</span>
+  return `<div class="setblk">
+    <div class="row srow">
+      <span class="setno">${si + 1}</span>
       <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="-2.5">−</button>
       <input inputmode="decimal" data-inp="w" data-e="${ei}" data-s="${si}" value="${wVal}" placeholder="自重">
-      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="2.5">＋</button></div>
-    <div class="row" style="margin-top:6px">
-      <span class="muted small" style="width:34px">次數</span>
+      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="2.5">＋</button>
+      <span class="unit">kg</span></div>
+    <div class="row srow">
+      <span class="setno"></span>
       <button class="step" data-act="r" data-e="${ei}" data-s="${si}" data-d="-1">−</button>
       <input inputmode="numeric" data-inp="r" data-e="${ei}" data-s="${si}" value="${rVal}" placeholder="次">
       <button class="step" data-act="r" data-e="${ei}" data-s="${si}" data-d="1">＋</button>
-      <span class="muted small" style="width:34px;text-align:right">RPE</span>
-      <input inputmode="decimal" data-inp="rpe" data-e="${ei}" data-s="${si}" value="${rpeVal}" placeholder="選填" style="max-width:70px"></div>
+      <span class="unit">RPE</span>
+      <input inputmode="decimal" data-inp="rpe" data-e="${ei}" data-s="${si}" value="${rpeVal}" placeholder="–" style="max-width:52px">
+      <button class="tiny ghost" data-act="rmSet" data-e="${ei}" data-s="${si}">✕</button></div>
   </div>`;
 }
 
@@ -287,18 +286,9 @@ function onInput(ev) {
   if (kind === 'search') { search = t.value; updatePickList(); return; }
   if (kind === 'overall') { session.overallNote = t.value; saveSoon(); return; }
   if (kind === 'note') { entryOf(t).note = t.value; saveSoon(); return; }
-  if (kind === 'w') { const v = t.value.trim(); setOf(t).weight = v === '' ? null : parseFloat(v); saveSoon(); toggleBw(t); return; }
+  if (kind === 'w') { const v = t.value.trim(); setOf(t).weight = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'r') { const v = t.value.trim(); setOf(t).reps = v === '' ? null : parseInt(v); saveSoon(); return; }
   if (kind === 'rpe') { const v = t.value.trim(); setOf(t).rpe = v === '' ? null : parseFloat(v); saveSoon(); return; }
-}
-// 只更新該組「自重」標記，不整頁重繪（保住游標）
-function toggleBw(t) {
-  const blk = t.closest('.setblk'); if (!blk) return;
-  const head = blk.querySelector('.row');
-  let tag = head.querySelector('.bw');
-  const empty = t.value.trim() === '';
-  if (empty && !tag) { tag = document.createElement('span'); tag.className = 'bw'; tag.textContent = '自重'; head.insertBefore(tag, head.querySelector('.muted').nextSibling); }
-  else if (!empty && tag) tag.remove();
 }
 // 搜尋：只重繪清單容器，不動搜尋框（保住游標）
 function updatePickList() {
