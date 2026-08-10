@@ -3,7 +3,7 @@ import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, comm
 import * as store from './lib/storage.js';
 
 const app = document.getElementById('app');
-let exercises = [], byPart = {}, summaryBlock = '';
+let exercises = [], byPart = {}, exByName = {}, summaryBlock = '';
 let history = {}, prefs = {};
 let session = null;
 let setupParts = [];
@@ -33,7 +33,8 @@ async function boot() {
     return;
   }
   byPart = {}; for (const p of PART_ORDER) byPart[p] = [];
-  for (const e of exercises) (byPart[e.部位] || (byPart[e.部位] = [])).push(e);
+  exByName = {};
+  for (const e of exercises) { (byPart[e.部位] || (byPart[e.部位] = [])).push(e); exByName[e.name] = e; }
 
   history = store.loadHistory();
   prefs = store.loadPrefs();
@@ -112,14 +113,33 @@ function exRows(list, picked) {
       <span class="meta">${esc(e.型式)}</span>${picked.has(e.name) ? '<span class="meta">✓</span>' : ''}</div>`).join('');
 }
 
+// 該動作最重（歷史 baked ＋ 本機上次 ＋ 本場即時 取最大）
+function bestLabel(name, currentSets) {
+  let best = null;
+  const consider = (w, r) => {
+    if (r === null || r === undefined || r === '') return;
+    const ww = (w === null || w === undefined || w === '') ? 0 : Number(w);
+    const rr = Number(r) || 0;
+    if (!best || ww > best.w || (ww === best.w && rr > best.r)) best = { w: ww, r: rr };
+  };
+  const ex = exByName[name];
+  if (ex && ex.best) { const m = ex.best.match(/^(自重|[\d.]+)×(\d+)/); if (m) consider(m[1] === '自重' ? null : parseFloat(m[1]), parseInt(m[2])); }
+  const h = history[name]; if (h && h.sets) h.sets.forEach(s => consider(s.weight, s.reps));
+  (currentSets || []).forEach(s => consider(s.weight, s.reps));
+  if (!best) return null;
+  return best.w ? `${best.w}×${best.r}` : `自重×${best.r}`;
+}
+
 function renderLog() {
   app.className = 'hasbar';
   const cards = session.entries.map((e, ei) => {
     const sets = e.sets.map((s, si) => setBlock(e, ei, s, si)).join('');
+    const bl = bestLabel(e.name, e.sets);
     return `<div class="card">
       <div class="row"><b>${esc(e.name)}</b><span class="spacer"></span>
         <span class="meta muted small">${esc(e.型式)}</span>
         <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
+      ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
       ${sets}
       <div class="row" style="margin-top:8px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>
       <input class="note-input" data-inp="note" data-e="${ei}" placeholder="動作備註（座椅高度／體感…）" value="${esc(e.note)}">
