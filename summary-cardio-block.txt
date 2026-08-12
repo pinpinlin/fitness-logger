@@ -1,0 +1,13 @@
+```dataviewjs
+const raw = await dv.io.load(dv.current().file.path);
+const rows = [];
+for (const line of raw.split('\n')) {
+  if (!line.includes('(型態:: 有氧)')) continue;
+  const nm = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+  if (!nm) continue;
+  const g = re => { const m = line.match(re); return m ? m[1].trim() : ''; };
+  rows.push([dv.fileLink(nm[1].trim()), g(/\(時間::\s*([^)]+)\)/), g(/\(距離::\s*([^)]+)\)/), g(/\(強度::\s*([^)]+)\)/)]);
+}
+if (rows.length) dv.table(['項目', '時間', '距離', '強度'], rows);
+else dv.paragraph('（本次無有氧）');
+```

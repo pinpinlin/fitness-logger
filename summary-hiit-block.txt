@@ -1,0 +1,22 @@
+```dataviewjs
+const raw = await dv.io.load(dv.current().file.path);
+const cur = dv.current();
+const work = cur["HIIT每項秒"], iRest = cur["HIIT項間休"], rounds = cur["HIIT輪數"], rRest = cur["HIIT輪間休"];
+const rows = [];
+for (const line of raw.split('\n')) {
+  if (!line.includes('(型態:: HIIT)')) continue;
+  const nm = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
+  if (!nm) continue;
+  const doneM = line.match(/\(完成::\s*([^)]+)\)/);
+  rows.push([dv.fileLink(nm[1].trim()), work ?? '', doneM ? doneM[1].trim() : (rounds ?? '')]);
+}
+if (rows.length) {
+  dv.table(['動作', '每項秒', '完成輪數'], rows);
+  if (work && iRest != null && rounds) {
+    const per = rows.length * (work + iRest);
+    const total = per * rounds + (rRest ?? 0) * Math.max(0, rounds - 1);
+    const mm = Math.floor(total / 60), ss = String(total % 60).padStart(2, '0');
+    dv.paragraph(`設定：每項 ${work} 秒 ｜ 項間休 ${iRest} 秒 ｜ ${rounds} 輪 ｜ 輪間休 ${rRest ?? 0} 秒 ｜ **總時長 ${mm}:${ss}**`);
+  }
+} else dv.paragraph('（本次無 HIIT）');
+```
