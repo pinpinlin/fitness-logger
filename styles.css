@@ -77,3 +77,25 @@ pre.md { white-space: pre-wrap; word-break: break-word; background: var(--bg); b
 .note-input { margin-top: 6px; }
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--good);
   color: #06210f; padding: 10px 16px; border-radius: 999px; font-weight: 600; z-index: 20; }
+
+/* 模式選擇 */
+.mode-grid { display: grid; gap: 10px; margin: 10px 0; }
+.mode-grid .chip { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 16px 18px; border-radius: 12px; }
+.mode-grid .chip b { font-size: 18px; font-weight: 600; }
+.mode-grid .chip span { font-size: 13px; color: var(--muted); }
+
+/* HIIT 導引全螢幕 */
+#app.run { display: flex; align-items: center; justify-content: center; min-height: 88vh; padding-bottom: 12px; }
+.runbox { text-align: center; width: 100%; }
+.runphase { font-size: 14px; color: var(--muted); letter-spacing: .05em; }
+.runname { font-size: 26px; font-weight: 600; margin: 8px 0 2px; line-height: 1.25; }
+.runbig { font-size: clamp(72px, 34vw, 150px); font-weight: 700; line-height: 1; font-variant-numeric: tabular-nums; margin: 6px 0; }
+.runnext { font-size: 14px; color: var(--muted); }
+.runhint { font-size: 12px; color: var(--warn); margin-top: 10px; }
+body:has(#app.run-work) { background: #0f2a1b; }
+body:has(#app.run-rest) { background: #2e2110; }
+body:has(#app.run-round) { background: #0f1e33; }
+#app.run-work .runbig { color: var(--good); }
+#app.run-rest .runbig { color: var(--warn); }
+#app.run-round .runbig { color: var(--accent); }
+#app.run-done .runbig { color: var(--good); }
