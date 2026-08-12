@@ -195,12 +195,18 @@ function renderLog() {
         <button class="tiny" data-act="hiitEdit">設定</button>
         <button class="tiny ghost" data-act="hiitClear">✕</button></div>
       <div class="best">每項 ${p.workSec}s ｜ 休 ${p.restSec}s ｜ ${p.rounds} 輪 ｜ 輪休 ${p.roundRestSec}s ｜ 總 ${total}</div>
-      ${session.hiit.items.map((it, i) => `<div class="row srow">
-        <span class="spacer">${esc(it.name)}</span>
-        <button class="step" data-act="hiitRound" data-i="${i}" data-d="-1">−</button>
-        <input inputmode="numeric" data-inp="hiitRound" data-i="${i}" value="${num(it.doneRounds)}" style="max-width:56px;text-align:center">
-        <button class="step" data-act="hiitRound" data-i="${i}" data-d="1">＋</button>
-        <span class="unit">輪</span></div>`).join('')}
+      ${session.hiit.items.map((it, i) => `<div class="setblk">
+        <div class="row srow"><span class="spacer">${esc(it.name)}</span>
+          <button class="step" data-act="hiitRound" data-i="${i}" data-d="-1">−</button>
+          <input inputmode="numeric" data-inp="hiitRound" data-i="${i}" value="${num(it.doneRounds)}" style="max-width:56px;text-align:center">
+          <button class="step" data-act="hiitRound" data-i="${i}" data-d="1">＋</button>
+          <span class="unit">輪</span></div>
+        <div class="row srow"><span class="muted small" style="width:34px">負重</span>
+          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="-2.5">−</button>
+          <input inputmode="decimal" data-inp="hiitLoad" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
+          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="2.5">＋</button>
+          <span class="unit">kg</span></div>
+      </div>`).join('')}
       <div class="row srow" style="margin-top:6px"><button class="tiny primary" data-act="hiitRun">▶ 開始導引</button></div>
     </div>`;
   }
@@ -523,7 +529,7 @@ function onClick(ev) {
       if (session.screen === 'HIIT_SETUP') {
         const h = session.hiit;
         const i = h.items.findIndex(x => x.name === name);
-        if (i >= 0) h.items.splice(i, 1); else h.items.push({ name, doneRounds: 0 });
+        if (i >= 0) h.items.splice(i, 1); else h.items.push({ name, doneRounds: 0, load: null });
       } else if (session.screen === 'CARDIO_PICK') {
         const i = session.cardio.findIndex(c => c.name === name);
         if (i >= 0) session.cardio.splice(i, 1);
@@ -563,6 +569,12 @@ function onClick(ev) {
       it.doneRounds = Math.max(0, (+it.doneRounds || 0) + parseInt(t.dataset.d));
       saveSoon(); render(); return;
     }
+    case 'hiitLoad': {
+      const it = session.hiit.items[+t.dataset.i];
+      const next = Math.round(((+it.load || 0) + parseFloat(t.dataset.d)) * 100) / 100;
+      it.load = next <= 0 ? null : next;   // ≤0 → 徒手
+      saveSoon(); render(); return;
+    }
     case 'runPause': {
       const r = session.run;
       if (r.paused) { r.phaseEndAt = Date.now() + r.pausedLeft; r.paused = false; }
@@ -591,6 +603,7 @@ function onInput(ev) {
   if (kind === 'rpe') { setOf(t).rpe = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'hp') { const k = t.dataset.k; session.hiit.params[k] = v === '' ? 0 : parseInt(v); saveSoon(); return; }
   if (kind === 'hiitRound') { session.hiit.items[+t.dataset.i].doneRounds = v === '' ? 0 : parseInt(v); saveSoon(); return; }
+  if (kind === 'hiitLoad') { session.hiit.items[+t.dataset.i].load = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'cMin') { session.cardio[+t.dataset.c].minutes = v === '' ? null : parseInt(v); saveSoon(); return; }
   if (kind === 'cKm') { session.cardio[+t.dataset.c].km = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'cInt') { session.cardio[+t.dataset.c].intensity = t.value; saveSoon(); return; }
@@ -615,7 +628,7 @@ function updatePickList(id, pool, parts) {
 }
 
 function ensureHiit() {
-  if (!session.hiit) session.hiit = { params: { workSec: 40, restSec: 20, rounds: 4, roundRestSec: 60 }, items: [] };
+  if (!session.hiit) session.hiit = { params: { workSec: 20, restSec: 10, rounds: 1, roundRestSec: 60 }, items: [] };
 }
 
 let toastT;

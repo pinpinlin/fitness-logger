@@ -12,6 +12,14 @@ test('newSession 初值', () => {
   assert.deepEqual(s.entries, []);
 });
 
+test('addEntry 預設只給一組（即使 history 有多組）', () => {
+  const s = newSession('2026-08-06', ['胸'], 90);
+  const history = { A: { sets: [{ weight: 80, reps: 5, rpe: 9 }, { weight: 85, reps: 5, rpe: 10 }, { weight: 85, reps: 3, rpe: 10 }] } };
+  addEntry(s, { name: 'A', 型式: '半機械式', 部位: '胸' }, history, 'u1');
+  assert.equal(s.entries[0].sets.length, 1, '加入動作時只預填一組');
+  assert.deepEqual(s.entries[0].sets[0], { weight: 80, reps: 5, rpe: 9 }, '用上次第一組當起點');
+});
+
 test('addEntry 帶出 history（深拷貝、不共參照）', () => {
   const s = newSession('2026-08-06', ['胸'], 90);
   const history = { '中胸 水平 推 史密斯': { sets: [{ weight: 85, reps: 5, rpe: 10 }] } };

@@ -86,6 +86,13 @@ test('hiitTotalSeconds／fmtDuration', () => {
   assert.equal(hiitTotalSeconds({ workSec: 30, restSec: 10, rounds: 1, roundRestSec: 60 }, 3), 120);
 });
 
+test('hiitLine 負重：有值輸出、空/0 視為徒手不輸出', () => {
+  assert.equal(hiitLine({ name: '臀橋', doneRounds: 3, load: 10 }), '[[臀橋]] (型態:: HIIT) (完成:: 3輪) (負重:: 10kg)');
+  assert.equal(hiitLine({ name: '臀橋', doneRounds: 3, load: 7.5 }), '[[臀橋]] (型態:: HIIT) (完成:: 3輪) (負重:: 7.5kg)');
+  assert.equal(hiitLine({ name: '臀橋', doneRounds: 3, load: null }), '[[臀橋]] (型態:: HIIT) (完成:: 3輪)');
+  assert.equal(hiitLine({ name: '臀橋', doneRounds: 3, load: '' }), '[[臀橋]] (型態:: HIIT) (完成:: 3輪)');
+});
+
 test('hiitLine／cardioLine（空欄位省略）', () => {
   assert.equal(hiitLine({ name: '波比跳', doneRounds: 4 }), '[[波比跳]] (型態:: HIIT) (完成:: 4輪)');
   assert.equal(cardioLine({ name: '跑步機 跑步', minutes: 30, km: 5.2, intensity: '8.5km/h 坡3' }),

@@ -4,7 +4,9 @@
   --good: #3ecf8e; --warn: #f5a623; --danger: #e2564a;
   --r: 12px;
 }
-* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+/* touch-action: manipulation → 停用 iOS 雙擊放大（Safari 會忽略 user-scalable=no，這行才是關鍵） */
+* { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
+input, textarea { font-size: 16px; }  /* iOS <16px 會在聚焦時自動放大頁面 */
 html, body { margin: 0; background: var(--bg); color: var(--fg);
   font-family: -apple-system, "PingFang TC", "Noto Sans TC", system-ui, sans-serif; }
 body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }

@@ -8,10 +8,11 @@ for (const line of raw.split('\n')) {
   const nm = line.match(/\[\[([^\]|]+)(?:\|[^\]]+)?\]\]/);
   if (!nm) continue;
   const doneM = line.match(/\(完成::\s*([^)]+)\)/);
-  rows.push([dv.fileLink(nm[1].trim()), work ?? '', doneM ? doneM[1].trim() : (rounds ?? '')]);
+  const loadM = line.match(/\(負重::\s*([^)]+)\)/);
+  rows.push([dv.fileLink(nm[1].trim()), work ?? '', doneM ? doneM[1].trim() : (rounds ?? ''), loadM ? loadM[1].trim() : '徒手']);
 }
 if (rows.length) {
-  dv.table(['動作', '每項秒', '完成輪數'], rows);
+  dv.table(['動作', '每項秒', '完成輪數', '負重'], rows);
   if (work && iRest != null && rounds) {
     const per = rows.length * (work + iRest);
     const total = per * rounds + (rRest ?? 0) * Math.max(0, rounds - 1);
