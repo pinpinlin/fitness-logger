@@ -145,11 +145,17 @@ function renderPick() {
       <button class="primary" data-act="toLog" ${session.entries.length ? '' : 'disabled'}>去記錄（${session.entries.length}）</button>
     </div>`;
 }
+// picked：Set（單選語義，點second次＝移除）或 Map name→次數（可重複，點擊＝再加一個）
 function exRows(list, picked) {
   if (!list.length) return `<p class="muted small">（無）</p>`;
-  return list.map(e => `<div class="ex-item ${picked.has(e.name) ? 'on' : ''}" data-act="pickEx" data-name="${esc(e.name)}">
+  const isMap = picked instanceof Map;
+  return list.map(e => {
+    const n = isMap ? (picked.get(e.name) || 0) : (picked.has(e.name) ? 1 : 0);
+    const badge = n ? `<span class="meta">${isMap ? '×' + n : '✓'}</span>` : (isMap ? '<span class="meta">＋</span>' : '');
+    return `<div class="ex-item ${n ? 'on' : ''}" data-act="pickEx" data-name="${esc(e.name)}">
       <span>${esc(e.name)}</span><span class="spacer"></span>
-      <span class="meta">${esc(e.區域 || e.型式)}</span>${picked.has(e.name) ? '<span class="meta">✓</span>' : ''}</div>`).join('');
+      <span class="meta">${esc(e.區域 || e.型式)}</span>${badge}</div>`;
+  }).join('');
 }
 
 // 該動作最重（歷史 baked ＋ 本機上次 ＋ 本場即時 取最大）
@@ -256,10 +262,16 @@ function setBlock(e, ei, s, si) {
 }
 
 /* ---------- HIIT 設定 ---------- */
+const hiitCounts = () => {
+  const m = new Map();
+  for (const it of session.hiit.items) m.set(it.name, (m.get(it.name) || 0) + 1);
+  return m;
+};
+
 function renderHiitSetup() {
   app.className = 'hasbar';
   const h = session.hiit;
-  const picked = new Set(h.items.map(i => i.name));
+  const picked = hiitCounts();
   const term = hiitSearch.trim();
   const pool = poolOf('HIIT');
   let list = '';
@@ -288,9 +300,16 @@ function renderHiitSetup() {
       ${paramRow('輪數', 'rounds', 1, '輪')}
       ${paramRow('輪間休', 'roundRestSec', 15, '秒')}
     </div>
-    ${h.items.length ? `<div class="sec-title">本場順序（點✕移除）</div>` +
-      h.items.map((it, i) => `<div class="ex-item on"><span class="setno">${i + 1}</span><span>${esc(it.name)}</span><span class="spacer"></span>
-        <button class="tiny ghost" data-act="hiitDel" data-i="${i}">✕</button></div>`).join('') : ''}
+    ${h.items.length ? `<div class="sec-title">本場順序（可重複加入同動作、設不同負重）</div>` +
+      h.items.map((it, i) => `<div class="card" style="padding:8px 10px">
+        <div class="row srow"><span class="setno">${i + 1}</span><span class="spacer">${esc(it.name)}</span>
+          <button class="tiny ghost" data-act="hiitDel" data-i="${i}">✕</button></div>
+        <div class="row srow"><span class="muted small" style="width:34px">負重</span>
+          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="-2.5">−</button>
+          <input inputmode="decimal" data-inp="hiitLoad" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
+          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="2.5">＋</button>
+          <span class="unit">kg</span></div>
+      </div>`).join('') : ''}
     <input data-inp="hiitSearch" placeholder="搜尋 HIIT 動作…" value="${esc(hiitSearch)}" style="margin-top:10px">
     <div id="hiitlist">${list}</div>
     <div class="bottombar">
@@ -316,14 +335,16 @@ function renderHiitRun() {
   }
   const left = leftSec(r);
   const cur = h.items[r.idx];
-  const nextName = peekNext(r, h);
+  const next = peekNext(r, h);
+  const loadTag = l => (l !== null && l !== undefined && l !== '') ? ` <span class="runload">${l}kg</span>` : '';
   app.innerHTML = `<div class="runbox">
     <div class="runphase">${PHASE[r.phase].label} ｜ 第 ${r.round}/${h.params.rounds} 輪 ｜ ${r.idx + 1}/${h.items.length}</div>
-    <div class="runname">${esc(r.phase === 'work' ? cur.name : '休息')}</div>
+    <div class="runname">${r.phase === 'work' ? esc(cur.name) + loadTag(cur.load) : '休息'}</div>
     <div class="runbig" id="runbig">${left}</div>
-    <div class="runnext">${nextName ? '下一個：' + esc(nextName) : '最後一段'}</div>
+    ${next ? `<div class="runnextlabel">下一個</div><div class="runnext">${esc(next.name)}${loadTag(next.load)}</div>`
+      : '<div class="runnextlabel">最後一段</div>'}
+    ${r.paused ? '<div class="runpaused">已暫停 · 點畫面繼續</div>' : '<div class="runtip">點畫面可暫停</div>'}
     <div class="row" style="justify-content:center;gap:8px;margin-top:14px">
-      <button class="tiny" data-act="runPause">${r.paused ? '▶ 繼續' : '⏸ 暫停'}</button>
       <button class="tiny" data-act="runSkip">跳過本段</button>
       <button class="tiny ghost" data-act="runStop">結束</button>
     </div>
@@ -334,10 +355,11 @@ function leftSec(r) {
   if (r.paused) return Math.max(0, Math.ceil(r.pausedLeft / 1000));
   return Math.max(0, Math.ceil((r.phaseEndAt - Date.now()) / 1000));
 }
+// 回傳下一個「運動」項目物件（含 load），無則 null
 function peekNext(r, h) {
-  if (r.phase === 'work') return r.idx < h.items.length - 1 ? h.items[r.idx + 1].name : (r.round < h.params.rounds ? h.items[0].name : null);
-  if (r.phase === 'itemRest') return h.items[r.idx + 1] ? h.items[r.idx + 1].name : null;
-  if (r.phase === 'roundRest') return h.items[0].name;
+  if (r.phase === 'work') return r.idx < h.items.length - 1 ? h.items[r.idx + 1] : (r.round < h.params.rounds ? h.items[0] : null);
+  if (r.phase === 'itemRest') return h.items[r.idx + 1] || null;
+  if (r.phase === 'roundRest') return h.items[0] || null;
   return null;
 }
 function phaseSeconds(phase) {
@@ -367,6 +389,13 @@ function advance() {
   beep(r.phase === 'work' ? 880 : 440, 0.18);
   render();
 }
+function togglePause() {
+  const r = session.run; if (!r) return;
+  if (r.paused) { r.phaseEndAt = Date.now() + r.pausedLeft; r.paused = false; }
+  else { r.pausedLeft = Math.max(0, r.phaseEndAt - Date.now()); r.paused = true; }
+  render();
+}
+
 function finishRun(completed) {
   const r = session.run, h = session.hiit;
   const done = completed ? +h.params.rounds : Math.max(0, r.round - 1);
@@ -498,7 +527,12 @@ function ensureSession() { if (!session) { session = newSession(todayISO(), [], 
 function goto(screen) { session.screen = screen; store.saveSession(session); render(); }
 
 function onClick(ev) {
-  const t = ev.target.closest('[data-act]'); if (!t) return;
+  const t = ev.target.closest('[data-act]');
+  // HIIT 導引中：點畫面空白處＝暫停／繼續（按鈕除外）
+  if (!t && session && session.screen === 'HIIT_RUN' && session.run && session.run.phase !== 'done') {
+    togglePause(); return;
+  }
+  if (!t) return;
   const act = t.dataset.act;
   switch (act) {
     case 'resume': pendingResume = false; render(); return;
@@ -527,9 +561,8 @@ function onClick(ev) {
     case 'pickEx': {
       const name = t.dataset.name;
       if (session.screen === 'HIIT_SETUP') {
-        const h = session.hiit;
-        const i = h.items.findIndex(x => x.name === name);
-        if (i >= 0) h.items.splice(i, 1); else h.items.push({ name, doneRounds: 0, load: null });
+        // 可重複：每點一次就再加一個（不同負重用），移除靠上方列表的 ✕
+        session.hiit.items.push({ name, doneRounds: 0, load: null });
       } else if (session.screen === 'CARDIO_PICK') {
         const i = session.cardio.findIndex(c => c.name === name);
         if (i >= 0) session.cardio.splice(i, 1);
@@ -575,12 +608,6 @@ function onClick(ev) {
       it.load = next <= 0 ? null : next;   // ≤0 → 徒手
       saveSoon(); render(); return;
     }
-    case 'runPause': {
-      const r = session.run;
-      if (r.paused) { r.phaseEndAt = Date.now() + r.pausedLeft; r.paused = false; }
-      else { r.pausedLeft = Math.max(0, r.phaseEndAt - Date.now()); r.paused = true; }
-      render(); return;
-    }
     case 'runSkip': advance(); return;
     case 'runStop': finishRun(false); return;
     case 'runFinish': session.run = null; releaseWake(); goto('LOG'); return;
@@ -612,9 +639,7 @@ function onInput(ev) {
 function updatePickList(id, pool, parts) {
   const el = document.getElementById(id); if (!el) return;
   const term = (id === 'hiitlist' ? hiitSearch : search).trim();
-  const picked = id === 'hiitlist'
-    ? new Set(session.hiit.items.map(i => i.name))
-    : new Set(session.entries.map(e => e.name));
+  const picked = id === 'hiitlist' ? hiitCounts() : new Set(session.entries.map(e => e.name));
   if (term) {
     el.innerHTML = `<div class="sec-title">搜尋結果</div>${exRows(pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), picked)}`;
   } else {
