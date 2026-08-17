@@ -46,6 +46,13 @@ test('exerciseLine 有/無備註', () => {
     '[[中胸 水平 推 史密斯]] (型式:: 半機械式) (組:: 80×5@9) (備註:: 座椅第4格)');
 });
 
+test('exerciseLine 超級組標記（欄位順序：組→超級組→備註）', () => {
+  const base = { name: 'A', 型式: '自由重量', sets: [{ weight: 20, reps: 10, rpe: null }] };
+  assert.equal(exerciseLine({ ...base, sg: 'A', note: '' }), '[[A]] (型式:: 自由重量) (組:: 20×10) (超級組:: A)');
+  assert.equal(exerciseLine({ ...base, sg: 'A', note: '慢放' }), '[[A]] (型式:: 自由重量) (組:: 20×10) (超級組:: A) (備註:: 慢放)');
+  assert.equal(exerciseLine({ ...base, sg: null, note: '' }), '[[A]] (型式:: 自由重量) (組:: 20×10)', '無超級組不輸出該欄位');
+});
+
 test('frontmatterParts 依序', () => {
   assert.equal(frontmatterParts(['臂', '胸']), '  - "[[胸]]"\n  - "[[臂]]"');
 });

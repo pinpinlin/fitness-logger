@@ -1,5 +1,6 @@
 import { PART_ORDER, partsLabel, fileName, buildMd, hiitTotalSeconds, fmtDuration } from './lib/format.js';
-import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory } from './lib/session.js';
+import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
+  toggleSupersetWithPrev, addSetToGroup, nextGroupTag } from './lib/session.js';
 import * as store from './lib/storage.js';
 
 const app = document.getElementById('app');
@@ -9,6 +10,7 @@ let history = {}, prefs = {};
 let session = null;
 let setupParts = [];
 let search = '', hiitSearch = '';
+let sgMode = false, sgSel = [];   // 選動作頁的超級組圈選模式
 let idc = 1;
 let pendingResume = false;
 
@@ -127,7 +129,7 @@ function renderParts() {
 function renderPick() {
   app.className = 'hasbar';
   const term = search.trim();
-  const picked = new Set(session.entries.map(e => e.name));
+  const picked = sgMode ? new Set(sgSel) : new Set(session.entries.map(e => e.name));
   const pool = poolOf('重訓');
   let body = '';
   if (term) {
@@ -137,12 +139,18 @@ function renderPick() {
   }
   app.innerHTML = `
     <h1>選動作</h1>
-    <p class="sub">${esc(partsLabel(session.parts))} · 點選加入</p>
+    <p class="sub">${sgMode
+      ? `🔗 圈選模式：依序點 2~3 個動作組成超級組（已選 ${sgSel.length}）`
+      : `${esc(partsLabel(session.parts))} · 點選加入`}</p>
     <input data-inp="search" placeholder="搜尋動作名／區域／動作型…" value="${esc(search)}">
     <div id="picklist">${body}</div>
     <div class="bottombar">
-      <button class="ghost" data-act="toParts">改部位</button>
-      <button class="primary" data-act="toLog" ${session.entries.length ? '' : 'disabled'}>去記錄（${session.entries.length}）</button>
+      ${sgMode
+        ? `<button class="ghost" data-act="sgCancel">取消</button>
+           <button class="primary" data-act="sgConfirm" ${sgSel.length >= 2 ? '' : 'disabled'}>組成超級組（${sgSel.length}）</button>`
+        : `<button class="ghost tiny" data-act="toParts">改部位</button>
+           <button class="ghost tiny" data-act="sgStart">🔗 超級組</button>
+           <button class="primary" data-act="toLog" ${session.entries.length ? '' : 'disabled'}>去記錄（${session.entries.length}）</button>`}
     </div>`;
 }
 // picked：Set（單選語義，點second次＝移除）或 Map name→次數（可重複，點擊＝再加一個）
@@ -178,17 +186,34 @@ function bestLabel(name, currentSets) {
 /* ---------- LOG（本場 hub）---------- */
 function renderLog() {
   app.className = 'hasbar';
-  const liftCards = session.entries.map((e, ei) => {
-    const sets = e.sets.map((s, si) => setBlock(e, ei, s, si)).join('');
-    const bl = bestLabel(e.name, e.sets);
-    return `<div class="card">
-      <div class="row"><b>${esc(e.name)}</b><span class="spacer"></span>
-        <span class="meta muted small">${esc(e.型式)}</span>
-        <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
-      ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
-      ${sets}
-      <div class="row srow" style="margin-top:6px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>
-      <input class="note-input" data-inp="note" data-e="${ei}" placeholder="動作備註（座椅高度／體感…）" value="${esc(e.note)}">
+  // 依「相鄰且同 sg」分群：超級組包成一個外框、共用整輪加組
+  const groups = [];
+  session.entries.forEach((e, ei) => {
+    const last = groups[groups.length - 1];
+    if (e.sg && last && last.sg === e.sg) last.idx.push(ei);
+    else groups.push({ sg: e.sg || null, idx: [ei] });
+  });
+  const liftCards = groups.map(g => {
+    const inner = g.idx.map(ei => {
+      const e = session.entries[ei];
+      const bl = bestLabel(e.name, e.sets);
+      const canLink = ei > 0;
+      return `<div class="card${g.sg ? ' ingroup' : ''}">
+        <div class="row"><b>${esc(e.name)}</b><span class="spacer"></span>
+          <span class="meta muted small">${esc(e.型式)}</span>
+          ${canLink ? `<button class="tiny ${e.sg ? 'linked' : 'ghost'}" data-act="sgToggle" data-e="${ei}" title="與上一個動作連成超級組">🔗</button>` : ''}
+          <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
+        ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
+        ${e.sets.map((s, si) => setBlock(e, ei, s, si)).join('')}
+        ${g.sg ? '' : `<div class="row srow" style="margin-top:6px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>`}
+        <input class="note-input" data-inp="note" data-e="${ei}" placeholder="動作備註（座椅高度／體感…）" value="${esc(e.note)}">
+      </div>`;
+    }).join('');
+    if (!g.sg) return inner;
+    return `<div class="sgbox">
+      <div class="sghead">超級組 ${g.sg} · 中間不休息</div>
+      ${inner}
+      <div class="row srow" style="margin-top:2px"><button class="tiny primary" data-act="addSetGroup" data-e="${g.idx[0]}">＋ 加一輪（全部動作）</button></div>
     </div>`;
   }).join('');
 
@@ -567,6 +592,12 @@ function onClick(ev) {
         const i = session.cardio.findIndex(c => c.name === name);
         if (i >= 0) session.cardio.splice(i, 1);
         else session.cardio.push({ name, minutes: null, km: null, intensity: '' });
+      } else if (sgMode) {
+        const i = sgSel.indexOf(name);
+        if (i >= 0) sgSel.splice(i, 1);
+        else if (sgSel.length < 3) sgSel.push(name);
+        else toast('超級組最多 3 個動作');
+        render(); return;
       } else {
         if (session.entries.some(e => e.name === name)) session.entries = session.entries.filter(e => e.name !== name);
         else { const ex = exByName[name]; if (ex) addEntry(session, ex, history, 'u' + (idc++)); }
@@ -580,6 +611,20 @@ function onClick(ev) {
     case 'toReview': goto('REVIEW'); return;
     case 'toExport': goto('EXPORT'); return;
     case 'addSet': addSet(entryOf(t)); session.restEndAt = Date.now() + (session.restSeconds || 90) * 1000; saveSoon(); render(); return;
+    case 'addSetGroup': addSetToGroup(session, +t.dataset.e); session.restEndAt = Date.now() + (session.restSeconds || 90) * 1000; saveSoon(); render(); return;
+    case 'sgToggle': toggleSupersetWithPrev(session, +t.dataset.e); saveSoon(); render(); return;
+    case 'sgStart': sgMode = true; sgSel = []; render(); return;
+    case 'sgCancel': sgMode = false; sgSel = []; render(); return;
+    case 'sgConfirm': {
+      const tag = nextGroupTag(session);
+      for (const nm of sgSel) {
+        const ex = exByName[nm]; if (!ex) continue;
+        addEntry(session, ex, history, 'u' + (idc++));
+        session.entries[session.entries.length - 1].sg = tag;
+      }
+      sgMode = false; sgSel = [];
+      store.saveSession(session); goto('LOG'); return;
+    }
     case 'rmSet': removeSet(entryOf(t), +t.dataset.s); saveSoon(); render(); return;
     case 'w': adjustWeight(setOf(t), parseFloat(t.dataset.d)); saveSoon(); render(); return;
     case 'r': adjustReps(setOf(t), parseInt(t.dataset.d)); saveSoon(); render(); return;

@@ -1,8 +1,58 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory
+  newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
+  nextGroupTag, toggleSupersetWithPrev, groupIndices, addSetToGroup
 } from '../lib/session.js';
+
+/* ── 超級組 ── */
+const mkSession = names => {
+  const s = newSession('2026-08-12', ['胸'], 90);
+  names.forEach((n, i) => addEntry(s, { name: n, 型式: '自由重量', 部位: '胸' }, {}, 'u' + i));
+  s.entries.forEach(e => { e.sets = [{ weight: 20, reps: 10, rpe: null }]; });
+  return s;
+};
+
+test('toggleSupersetWithPrev：串成組、再點取消', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  toggleSupersetWithPrev(s, 1);
+  assert.equal(s.entries[0].sg, 'A', '上一個動作也被納入同組');
+  assert.equal(s.entries[1].sg, 'A');
+  assert.equal(s.entries[2].sg, null, '第三個未受影響');
+  toggleSupersetWithPrev(s, 2);
+  assert.equal(s.entries[2].sg, 'A', '接第三個進同組');
+  toggleSupersetWithPrev(s, 2);
+  assert.equal(s.entries[2].sg, null, '再點脫離');
+});
+
+test('toggleSupersetWithPrev：第一個動作無上一個，不成組', () => {
+  const s = mkSession(['A', 'B']);
+  toggleSupersetWithPrev(s, 0);
+  assert.equal(s.entries[0].sg, null);
+});
+
+test('nextGroupTag 避開已用代號', () => {
+  const s = mkSession(['A', 'B']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A';
+  assert.equal(nextGroupTag(s), 'B');
+});
+
+test('groupIndices 只含相鄰同組', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A';
+  assert.deepEqual(groupIndices(s, 0), [0, 1]);
+  assert.deepEqual(groupIndices(s, 1), [0, 1]);
+  assert.deepEqual(groupIndices(s, 2), [2], '非組內動作只回自己');
+});
+
+test('addSetToGroup：整輪加組，組內全部同步＋不影響組外', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A';
+  addSetToGroup(s, 0);
+  assert.equal(s.entries[0].sets.length, 2);
+  assert.equal(s.entries[1].sets.length, 2);
+  assert.equal(s.entries[2].sets.length, 1, '組外動作不該被加組');
+});
 
 test('newSession 初值', () => {
   const s = newSession('2026-08-06', ['胸', '臂'], 120);

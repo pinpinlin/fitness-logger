@@ -22,7 +22,9 @@ for (const line of raw.split('\n')) {
   }
   const avgRpe = rpes.length ? (Math.round(rpes.reduce((a, b) => a + b, 0) / rpes.length * 10) / 10) : '';
   const avgCell = avgRpe === '' ? '' : `<div style="text-align:center">${avgRpe}</div>`;
-  rows.push([dv.fileLink(name), type, disp.join(' ｜ '), best ? best.str : '', avgCell]);
+  const sgM = line.match(/\(超級組::\s*([^)]+)\)/);
+  const sgCell = sgM ? `<div style="text-align:center">${sgM[1].trim()}</div>` : '';
+  rows.push([dv.fileLink(name), type, disp.join(' ｜ '), best ? best.str : '', avgCell, sgCell]);
 }
-dv.table(['動作', '型式', '各組（重量×次數）', '最重組', '平均RPE'], rows);
+dv.table(['動作', '型式', '各組（重量×次數）', '最重組', '平均RPE', '超級組'], rows);
 ```
