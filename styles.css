@@ -80,6 +80,16 @@ pre.md { white-space: pre-wrap; word-break: break-word; background: var(--bg); b
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--good);
   color: #06210f; padding: 10px 16px; border-radius: 999px; font-weight: 600; z-index: 20; }
 
+/* 上次組數／歷史紀錄 */
+.lastsets { color: var(--muted); font-size: 12px; margin: 1px 0 3px; line-height: 1.45; }
+.lastsets .lsdate { color: var(--accent); }
+.histbody { border-top: 1px solid var(--line); margin-top: 7px; padding-top: 6px; }
+.histitem { margin: 6px 0; }
+.histitem b { font-size: 14px; font-weight: 500; }
+.histsets { color: var(--muted); font-size: 12.5px; line-height: 1.5; }
+.histnote { color: var(--muted); font-size: 12px; font-style: italic; margin-top: 3px; }
+.sgtag { font-size: 11px; color: var(--accent); border: 1px solid var(--accent); border-radius: 4px; padding: 0 3px; }
+
 /* 超級組 */
 .sgbox { border: 1.5px solid var(--accent); border-radius: 14px; padding: 6px 7px 8px; margin: 9px 0;
   background: rgba(79,157,255,.05); }

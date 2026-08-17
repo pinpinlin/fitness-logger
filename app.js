@@ -6,6 +6,9 @@ import * as store from './lib/storage.js';
 const app = document.getElementById('app');
 let exercises = [], byPart = {}, exByName = {};
 let blocks = { summary: '', hiitSummary: '', cardioSummary: '' };
+let pastLogs = [];          // history.json：過去場次（新→舊）
+let histOpen = null;        // 歷史頁展開中的場次索引
+let histScreen = false;     // 歷史頁開啟中（獨立於 session，未開始訓練也能看）
 let history = {}, prefs = {};
 let session = null;
 let setupParts = [];
@@ -27,13 +30,14 @@ const num = v => (v === null || v === undefined || v === '') ? '' : v;
 
 async function boot() {
   try {
-    const [ex, sb, hb, cb] = await Promise.all([
+    const [ex, sb, hb, cb, hist] = await Promise.all([
       fetch('exercises.json').then(r => r.json()),
       fetch('summary-block.txt').then(r => r.text()),
       fetch('summary-hiit-block.txt').then(r => r.text()).catch(() => ''),
-      fetch('summary-cardio-block.txt').then(r => r.text()).catch(() => '')
+      fetch('summary-cardio-block.txt').then(r => r.text()).catch(() => ''),
+      fetch('history.json').then(r => r.json()).catch(() => [])
     ]);
-    exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb };
+    exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb }; pastLogs = hist;
   } catch (e) {
     app.innerHTML = `<div class="card">載入動作資料失敗，請確認連線後重開。<br><span class="muted small">${esc(e.message)}</span></div>`;
     return;
@@ -73,6 +77,7 @@ const exportSession = () => ({ ...session, parts: derivedParts(session) });
 
 /* ---------- render ---------- */
 function render() {
+  if (histScreen) return renderHistory();
   if (pendingResume) return renderResume();
   if (!session) return renderSetup();
   switch (session.screen) {
@@ -109,7 +114,8 @@ function renderSetup() {
       <div class="chip mode" data-act="mode" data-m="重訓"><b>重訓</b><span>重量 × 次數</span></div>
       <div class="chip mode" data-act="mode" data-m="HIIT"><b>HIIT</b><span>計時循環</span></div>
       <div class="chip mode" data-act="mode" data-m="有氧"><b>有氧</b><span>時間／距離</span></div>
-    </div>`;
+    </div>
+    <div class="row"><button class="ghost" data-act="histOpen" style="width:100%">📖 看過去紀錄（${pastLogs.length} 場）</button></div>`;
 }
 
 function renderParts() {
@@ -197,6 +203,9 @@ function renderLog() {
     const inner = g.idx.map(ei => {
       const e = session.entries[ei];
       const bl = bestLabel(e.name, e.sets);
+      const ex = exByName[e.name];
+      const lastLine = (ex && ex.lastSets)
+        ? `<div class="lastsets">上次 <span class="lsdate">${esc((ex.lastDate || '').slice(5))}</span> ${esc(ex.lastSets)}</div>` : '';
       const canLink = ei > 0;
       return `<div class="card${g.sg ? ' ingroup' : ''}">
         <div class="row"><b>${esc(e.name)}</b><span class="spacer"></span>
@@ -204,6 +213,7 @@ function renderLog() {
           ${canLink ? `<button class="tiny ${e.sg ? 'linked' : 'ghost'}" data-act="sgToggle" data-e="${ei}" title="與上一個動作連成超級組">🔗</button>` : ''}
           <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
         ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
+        ${lastLine}
         ${e.sets.map((s, si) => setBlock(e, ei, s, si)).join('')}
         ${g.sg ? '' : `<div class="row srow" style="margin-top:6px"><button class="tiny" data-act="addSet" data-e="${ei}">＋ 加一組</button></div>`}
         <input class="note-input" data-inp="note" data-e="${ei}" placeholder="動作備註（座椅高度／體感…）" value="${esc(e.note)}">
@@ -255,7 +265,8 @@ function renderLog() {
 
   const empty = !hasContent(session) ? '<p class="muted">尚無內容，用下方按鈕加入。</p>' : '';
   app.innerHTML = `
-    <h1>記錄</h1>
+    <div class="row"><h1 style="margin:4px 0 2px">記錄</h1><span class="spacer"></span>
+      <button class="tiny ghost" data-act="histOpen">📖 過去紀錄</button></div>
     <p class="sub">${esc(session.date)} · ${esc(partsLabel(derivedParts(session)) || '—')}</p>
     <div id="timer"></div>
     ${liftCards}${hiitCard}${cardioCards}${empty}
@@ -479,6 +490,37 @@ function renderCardioPick() {
     </div>`;
 }
 
+/* ---------- 歷史紀錄 ---------- */
+function renderHistory() {
+  app.className = 'hasbar';
+  const rows = pastLogs.map((s, i) => {
+    const open = histOpen === i;
+    const counts = { 重訓: 0, HIIT: 0, 有氧: 0 };
+    (s.items || []).forEach(it => { counts[it.型態] = (counts[it.型態] || 0) + 1; });
+    const tags = Object.entries(counts).filter(([, n]) => n).map(([k, n]) => `${k}${n}`).join('·');
+    const body = !open ? '' : `<div class="histbody">
+      ${(s.items || []).map(it => {
+        if (it.型態 === '重訓') return `<div class="histitem"><b>${esc(it.name)}</b>${it.超級組 ? ` <span class="sgtag">超${esc(it.超級組)}</span>` : ''}<div class="histsets">${esc(it.組)}</div>${it.備註 ? `<div class="histnote">${esc(it.備註)}</div>` : ''}</div>`;
+        if (it.型態 === 'HIIT') return `<div class="histitem"><b>🔥 ${esc(it.name)}</b><div class="histsets">完成 ${esc(it.完成 || '-')}${it.負重 ? ` ｜ 負重 ${esc(it.負重)}` : ''}</div></div>`;
+        return `<div class="histitem"><b>🏃 ${esc(it.name)}</b><div class="histsets">${[it.時間, it.距離, it.強度].filter(Boolean).map(esc).join(' ｜ ')}</div></div>`;
+      }).join('')}
+      ${s.hiitParams ? `<div class="histnote">HIIT：每項 ${s.hiitParams.HIIT每項秒}s ｜ 休 ${s.hiitParams.HIIT項間休}s ｜ ${s.hiitParams.HIIT輪數} 輪 ｜ 輪休 ${s.hiitParams.HIIT輪間休}s</div>` : ''}
+      ${s.note ? `<div class="histnote">💬 ${esc(s.note)}</div>` : ''}
+    </div>`;
+    return `<div class="card" style="padding:9px 11px">
+      <div class="row" data-act="histToggle" data-i="${i}" style="cursor:pointer">
+        <b>${esc(s.date)}</b><span class="meta" style="margin-left:8px">${esc(s.label)}</span>
+        <span class="spacer"></span><span class="meta muted small">${esc(tags)}</span>
+        <span class="meta">${open ? '▲' : '▼'}</span></div>
+      ${body}</div>`;
+  }).join('');
+  app.innerHTML = `
+    <h1>訓練紀錄</h1>
+    <p class="sub">${pastLogs.length} 場（新→舊）· 點日期展開</p>
+    ${rows || '<p class="muted">尚無紀錄</p>'}
+    <div class="bottombar"><button class="ghost" data-act="histBack">← 返回</button></div>`;
+}
+
 function renderReview() {
   app.className = 'hasbar';
   app.innerHTML = `
@@ -656,6 +698,11 @@ function onClick(ev) {
     case 'runSkip': advance(); return;
     case 'runStop': finishRun(false); return;
     case 'runFinish': session.run = null; releaseWake(); goto('LOG'); return;
+
+    /* 歷史紀錄 */
+    case 'histOpen': histScreen = true; histOpen = null; render(); return;
+    case 'histBack': histScreen = false; render(); return;
+    case 'histToggle': { const i = +t.dataset.i; histOpen = (histOpen === i) ? null : i; render(); return; }
 
     case 'copy': navigator.clipboard?.writeText(buildMd(exportSession(), blocks)); toast('已複製全文'); return;
     case 'save': saveMd(); return;
