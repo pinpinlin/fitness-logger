@@ -3,6 +3,7 @@
   --fg: #f2f3f5; --muted: #9aa0a8; --accent: #4f9dff; --accent-dim: #1f3a5c;
   --good: #3ecf8e; --warn: #f5a623; --danger: #e2564a;
   --r: 12px;
+  color-scheme: dark;
 }
 /* touch-action: manipulation → 停用 iOS 雙擊放大（Safari 會忽略 user-scalable=no，這行才是關鍵） */
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; touch-action: manipulation; }
@@ -32,6 +33,7 @@ button:disabled { opacity: .4; }
 input { font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
   border-radius: 8px; padding: 7px 9px; width: 100%; }
 input::placeholder { color: #6b7178; }
+.sub input[type=date] { width: auto; font-size: 16px; vertical-align: middle; }
 
 .card { background: var(--card); border: 1px solid var(--line); border-radius: var(--r);
   padding: 9px 12px; margin: 7px 0; }

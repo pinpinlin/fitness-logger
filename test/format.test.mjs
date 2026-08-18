@@ -214,6 +214,10 @@ test('sessionSlug：型態與部位皆空→只回日期', () => {
   assert.equal(sessionSlug({ date: '2026-08-18', parts: [], entries: [], hiit: null, cardio: [] }), '2026-08-18');
 });
 
+test('sessionSlug：型態空、部位非空（選了部位加動作但一組都沒記）', () => {
+  assert.equal(sessionSlug({ date: '2026-08-18', parts: ['胸'], entries: [], hiit: null, cardio: [] }), '2026-08-18-胸');
+});
+
 test('buildMd 的 H1 與 fileName 去掉 .md 後一字不差', () => {
   const s = mkHiitCardio('2026-08-18', ['肩', '腿']);
   const md = buildMd(s, {});
