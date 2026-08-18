@@ -528,7 +528,7 @@ function renderReview() {
   app.className = 'hasbar';
   app.innerHTML = `
     <h1>全場心得</h1>
-    <p class="sub">${esc(session.date)} · ${esc(partsLabel(derivedParts(session)) || '—')}</p>
+    <p class="sub"><input type="date" data-inp="date" value="${esc(session.date)}"> · ${esc(partsLabel(derivedParts(session)) || '—')}</p>
     <textarea data-inp="overall" placeholder="整體感受、今天狀態…（會寫進 log 的體感/心得）">${esc(session.overallNote)}</textarea>
     <div class="bottombar">
       <button class="ghost" data-act="toLog">← 回記錄</button>
@@ -719,6 +719,7 @@ function onInput(ev) {
   if (kind === 'search') { search = v; updatePickList('picklist', poolOf('重訓'), session.parts); return; }
   if (kind === 'hiitSearch') { hiitSearch = v; updatePickList('hiitlist', poolOf('HIIT'), PART_ORDER); return; }
   if (kind === 'overall') { session.overallNote = t.value; saveSoon(); return; }
+  if (kind === 'date') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { session.date = v; saveSoon(); } return; }
   if (kind === 'note') { entryOf(t).note = t.value; saveSoon(); return; }
   if (kind === 'w') { setOf(t).weight = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'r') { setOf(t).reps = v === '' ? null : parseInt(v); saveSoon(); return; }
