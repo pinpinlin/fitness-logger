@@ -540,7 +540,7 @@ function renderExport() {
   app.className = 'hasbar';
   const s = exportSession();
   const md = buildMd(s, blocks);
-  const name = fileName(s.date, s.parts);
+  const name = fileName(s);
   app.innerHTML = `
     <h1>存檔</h1>
     <p class="sub">${esc(name)} → 存到 OneDrive / 00_Inbox</p>
@@ -762,7 +762,7 @@ function toast(msg) {
 async function saveMd() {
   const s = exportSession();
   const text = buildMd(s, blocks);              // 同步先算，保住 user-activation
-  const name = fileName(s.date, s.parts);
+  const name = fileName(s);
   const file = new File([text], name, { type: 'text/markdown' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
     try { await navigator.share({ files: [file] }); afterSave(); return; }
