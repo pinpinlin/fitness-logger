@@ -765,7 +765,7 @@ async function saveMd() {
   const name = fileName(s.date, s.parts);
   const file = new File([text], name, { type: 'text/markdown' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    try { await navigator.share({ files: [file], title: name }); afterSave(); return; }
+    try { await navigator.share({ files: [file] }); afterSave(); return; }
     catch (e) { if (e && e.name === 'AbortError') return; }
   }
   try { await navigator.clipboard.writeText(text); toast('已複製 → 貼到檔案 App 存成 .md'); }
