@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
-  nextGroupTag, toggleSupersetWithPrev, groupIndices, addSetToGroup
+  nextGroupTag, toggleSupersetWithPrev, groupIndices, addSetToGroup, restampDate
 } from '../lib/session.js';
 
 /* ── 超級組 ── */
@@ -126,4 +126,31 @@ test('commitHistory 只寫有 reps 的組', () => {
   commitHistory(s, history);
   assert.deepEqual(history.A.sets, [{ weight: 80, reps: 5, rpe: 9 }]);
   assert.ok(!('B' in history), '無有效組的動作不寫 history');
+});
+
+/* ── restampDate ── */
+test('restampDate：日期不同→改寫成今天並回傳 true', () => {
+  const s = newSession('2026-08-17', ['腿'], 90);
+  assert.equal(restampDate(s, '2026-08-18'), true);
+  assert.equal(s.date, '2026-08-18');
+});
+
+test('restampDate：日期相同→不動並回傳 false', () => {
+  const s = newSession('2026-08-18', ['腿'], 90);
+  assert.equal(restampDate(s, '2026-08-18'), false);
+  assert.equal(s.date, '2026-08-18');
+});
+
+test('restampDate：session 為 null／undefined→回傳 false 不拋錯', () => {
+  assert.equal(restampDate(null, '2026-08-18'), false);
+  assert.equal(restampDate(undefined, '2026-08-18'), false);
+});
+
+test('restampDate 之後 commitHistory 用新日期', () => {
+  const s = newSession('2026-08-17', ['胸'], 90);
+  s.entries = [{ name: '臥推', sets: [{ weight: 80, reps: 5, rpe: 9 }] }];
+  restampDate(s, '2026-08-18');
+  const history = {};
+  commitHistory(s, history);
+  assert.equal(history['臥推'].date, '2026-08-18');
 });

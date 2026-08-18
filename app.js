@@ -1,6 +1,6 @@
 import { PART_ORDER, partsLabel, fileName, buildMd, hiitTotalSeconds, fmtDuration } from './lib/format.js';
 import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
-  toggleSupersetWithPrev, addSetToGroup, nextGroupTag } from './lib/session.js';
+  toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate } from './lib/session.js';
 import * as store from './lib/storage.js';
 
 const app = document.getElementById('app');
@@ -49,7 +49,10 @@ async function boot() {
   history = store.loadHistory();
   prefs = store.loadPrefs();
   session = store.loadSession();
-  if (session) migrate(session);
+  if (session) {
+    migrate(session);
+    if (restampDate(session, todayISO())) store.saveSession(session);
+  }
   pendingResume = !!(session && hasContent(session));
   render();
   startTicker();
