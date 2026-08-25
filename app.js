@@ -58,21 +58,27 @@ async function boot() {
   startTicker();
 }
 
-// 舊 session（計畫二）補上新欄位
+// 舊 session 補上新欄位；單一 hiit → hiits 陣列（一場可多組 HIIT）
 function migrate(s) {
   if (!s.entries) s.entries = [];
-  if (s.hiit === undefined) s.hiit = null;
   if (!s.cardio) s.cardio = [];
   if (s.run === undefined) s.run = null;
+  if (!Array.isArray(s.hiits)) s.hiits = s.hiit ? [s.hiit] : [];
+  delete s.hiit;
+  s.hiits.forEach((g, i) => { if (!g.tag) g.tag = String.fromCharCode(65 + i); });
+  if (typeof s.hiitIdx !== 'number') s.hiitIdx = 0;
 }
-const hasContent = s => (s.entries || []).length || (s.hiit && (s.hiit.items || []).length) || (s.cardio || []).length;
+// 目前編輯／執行中的 HIIT 組
+const curH = () => (session && session.hiits) ? session.hiits[session.hiitIdx] : null;
+const hGroups = s => (s.hiits || []).filter(g => (g.items || []).length);
+const hasContent = s => (s.entries || []).length || hGroups(s).length || (s.cardio || []).length;
 const typeOf = e => (e && e.型態) ? e.型態 : ['重訓'];
 const poolOf = t => exercises.filter(e => typeOf(e).includes(t));
 
 // 檔名/frontmatter 用的部位＝重訓勾選 ∪ HIIT 動作 ∪ 有氧項目 的部位
 function derivedParts(s) {
   const set = new Set(s.parts || []);
-  for (const it of (s.hiit ? s.hiit.items : []) || []) { const e = exByName[it.name]; if (e) set.add(e.部位); }
+  for (const g of hGroups(s)) for (const it of g.items) { const e = exByName[it.name]; if (e) set.add(e.部位); }
   for (const c of s.cardio || []) { const e = exByName[c.name]; if (e) set.add(e.部位); }
   return PART_ORDER.filter(p => set.has(p));
 }
@@ -98,7 +104,7 @@ function render() {
 
 function renderResume() {
   const label = partsLabel(derivedParts(session)) || '—';
-  const n = (session.entries || []).length + ((session.hiit && session.hiit.items) || []).length + (session.cardio || []).length;
+  const n = (session.entries || []).length + hGroups(session).reduce((a,g)=>a+g.items.length,0) + (session.cardio || []).length;
   app.className = '';
   app.innerHTML = `
     <h1>有未完成的紀錄</h1>
@@ -230,30 +236,32 @@ function renderLog() {
     </div>`;
   }).join('');
 
-  let hiitCard = '';
-  if (session.hiit && session.hiit.items.length) {
-    const p = session.hiit.params;
-    const total = fmtDuration(hiitTotalSeconds(p, session.hiit.items.length));
-    hiitCard = `<div class="card">
-      <div class="row"><b>🔥 HIIT</b><span class="spacer"></span>
-        <button class="tiny" data-act="hiitEdit">設定</button>
-        <button class="tiny ghost" data-act="hiitClear">✕</button></div>
+  // 多組 HIIT：每組一張卡
+  const multiH = session.hiits.filter(g => g.items.length).length > 1;
+  const hiitCard = session.hiits.map((g, gi) => {
+    if (!g.items.length) return '';
+    const p = g.params;
+    const total = fmtDuration(hiitTotalSeconds(p, g.items.length));
+    return `<div class="card">
+      <div class="row"><b>🔥 HIIT${multiH ? ' ' + esc(g.tag) : ''}</b><span class="spacer"></span>
+        <button class="tiny" data-act="hiitEdit" data-g="${gi}">設定</button>
+        <button class="tiny ghost" data-act="hiitClear" data-g="${gi}">✕</button></div>
       <div class="best">每項 ${p.workSec}s ｜ 休 ${p.restSec}s ｜ ${p.rounds} 輪 ｜ 輪休 ${p.roundRestSec}s ｜ 總 ${total}</div>
-      ${session.hiit.items.map((it, i) => `<div class="setblk">
+      ${g.items.map((it, i) => `<div class="setblk">
         <div class="row srow"><span class="spacer">${esc(it.name)}</span>
-          <button class="step" data-act="hiitRound" data-i="${i}" data-d="-1">−</button>
-          <input inputmode="numeric" data-inp="hiitRound" data-i="${i}" value="${num(it.doneRounds)}" style="max-width:56px;text-align:center">
-          <button class="step" data-act="hiitRound" data-i="${i}" data-d="1">＋</button>
+          <button class="step" data-act="hiitRound" data-g="${gi}" data-i="${i}" data-d="-1">−</button>
+          <input inputmode="numeric" data-inp="hiitRound" data-g="${gi}" data-i="${i}" value="${num(it.doneRounds)}" style="max-width:56px;text-align:center">
+          <button class="step" data-act="hiitRound" data-g="${gi}" data-i="${i}" data-d="1">＋</button>
           <span class="unit">輪</span></div>
         <div class="row srow"><span class="muted small" style="width:34px">負重</span>
-          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="-2.5">−</button>
-          <input inputmode="decimal" data-inp="hiitLoad" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
-          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="2.5">＋</button>
+          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="-2.5">−</button>
+          <input inputmode="decimal" data-inp="hiitLoad" data-g="${gi}" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
+          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="2.5">＋</button>
           <span class="unit">kg</span></div>
       </div>`).join('')}
-      <div class="row srow" style="margin-top:6px"><button class="tiny primary" data-act="hiitRun">▶ 開始導引</button></div>
+      <div class="row srow" style="margin-top:6px"><button class="tiny primary" data-act="hiitRun" data-g="${gi}">▶ 開始導引</button></div>
     </div>`;
-  }
+  }).join('');
 
   const cardioCards = (session.cardio || []).map((c, ci) => `<div class="card">
       <div class="row"><b>🏃 ${esc(c.name)}</b><span class="spacer"></span>
@@ -275,7 +283,7 @@ function renderLog() {
     ${liftCards}${hiitCard}${cardioCards}${empty}
     <div class="bottombar">
       <button class="ghost tiny" data-act="addLift">＋重訓</button>
-      <button class="ghost tiny" data-act="addHiit">＋HIIT</button>
+      <button class="ghost tiny" data-act="addHiit">＋HIIT${session.hiits.filter(g=>g.items.length).length?'組':''}</button>
       <button class="ghost tiny" data-act="addCardio">＋有氧</button>
       <button class="primary" data-act="toReview" ${hasContent(session) ? '' : 'disabled'}>完成</button>
     </div>`;
@@ -303,13 +311,13 @@ function setBlock(e, ei, s, si) {
 /* ---------- HIIT 設定 ---------- */
 const hiitCounts = () => {
   const m = new Map();
-  for (const it of session.hiit.items) m.set(it.name, (m.get(it.name) || 0) + 1);
+  for (const it of curH().items) m.set(it.name, (m.get(it.name) || 0) + 1);
   return m;
 };
 
 function renderHiitSetup() {
   app.className = 'hasbar';
-  const h = session.hiit;
+  const h = curH();
   const picked = hiitCounts();
   const term = hiitSearch.trim();
   const pool = poolOf('HIIT');
@@ -331,7 +339,7 @@ function renderHiitSetup() {
       <button class="step" data-act="hp" data-k="${key}" data-d="${step}">＋</button>
       <span class="unit">${unit}</span></div>`;
   app.innerHTML = `
-    <h1>HIIT 設定</h1>
+    <h1>HIIT 設定${session.hiits.length>1?' · '+esc(curH().tag)+' 組':''}</h1>
     <p class="sub">已選 ${h.items.length} 個動作 ｜ 預估總時長 ${total}</p>
     <div class="card">
       ${paramRow('每項', 'workSec', 5, '秒')}
@@ -361,7 +369,7 @@ function renderHiitSetup() {
 const PHASE = { work: { label: '運動', cls: 'run-work' }, itemRest: { label: '項間休息', cls: 'run-rest' }, roundRest: { label: '輪間休息', cls: 'run-round' }, done: { label: '完成', cls: 'run-done' } };
 
 function renderHiitRun() {
-  const r = session.run, h = session.hiit;
+  const r = session.run, h = curH();
   if (!r || !h) { session.screen = 'LOG'; return render(); }
   app.className = 'run ' + (PHASE[r.phase] ? PHASE[r.phase].cls : '');
   if (r.phase === 'done') {
@@ -402,11 +410,11 @@ function peekNext(r, h) {
   return null;
 }
 function phaseSeconds(phase) {
-  const p = session.hiit.params;
+  const p = curH().params;
   return phase === 'work' ? +p.workSec : phase === 'itemRest' ? +p.restSec : +p.roundRestSec;
 }
 function startRun() {
-  const h = session.hiit;
+  const h = curH();
   session.run = { round: 1, idx: 0, phase: 'work', phaseEndAt: Date.now() + phaseSeconds('work') * 1000, paused: false, pausedLeft: 0, beeped: -1, noWakeLock: false };
   session.screen = 'HIIT_RUN';
   initAudio(); requestWake();
@@ -414,7 +422,7 @@ function startRun() {
 }
 // 推進到下一段；回傳是否結束
 function advance() {
-  const r = session.run, h = session.hiit, n = h.items.length, R = +h.params.rounds;
+  const r = session.run, h = curH(), n = h.items.length, R = +h.params.rounds;
   if (r.phase === 'work') {
     if (r.idx < n - 1) r.phase = +h.params.restSec > 0 ? 'itemRest' : 'workNext';
     else if (r.round < R) r.phase = +h.params.roundRestSec > 0 ? 'roundRest' : 'roundNext';
@@ -436,7 +444,7 @@ function togglePause() {
 }
 
 function finishRun(completed) {
-  const r = session.run, h = session.hiit;
+  const r = session.run, h = curH();
   const done = completed ? +h.params.rounds : Math.max(0, r.round - 1);
   h.items.forEach(it => { it.doneRounds = done; });
   r.phase = 'done';
@@ -573,7 +581,8 @@ function tick() {
 function renderTimer() {
   const el = document.getElementById('timer');
   if (!el || !session) return;
-  if (!session.restEndAt) { el.innerHTML = ''; return; }
+  if (!session.restEndAt) { el.innerHTML = ''; app.classList.remove('withtimer'); return; }
+  app.classList.add('withtimer');
   const left = Math.round((session.restEndAt - Date.now()) / 1000);
   if (left <= 0) {
     el.innerHTML = `<div class="timer"><span class="t" style="color:var(--good)">休息結束</span><span class="spacer"></span>
@@ -632,7 +641,7 @@ function onClick(ev) {
       const name = t.dataset.name;
       if (session.screen === 'HIIT_SETUP') {
         // 可重複：每點一次就再加一個（不同負重用），移除靠上方列表的 ✕
-        session.hiit.items.push({ name, doneRounds: 0, load: null });
+        curH().items.push({ name, doneRounds: 0, load: null });
       } else if (session.screen === 'CARDIO_PICK') {
         const i = session.cardio.findIndex(c => c.name === name);
         if (i >= 0) session.cardio.splice(i, 1);
@@ -680,20 +689,21 @@ function onClick(ev) {
     case 'hp': {
       const k = t.dataset.k, d = parseInt(t.dataset.d);
       const min = k === 'rounds' ? 1 : 0;
-      session.hiit.params[k] = Math.max(min, (+session.hiit.params[k] || 0) + d);
+      curH().params[k] = Math.max(min, (+curH().params[k] || 0) + d);
       saveSoon(); render(); return;
     }
-    case 'hiitDel': session.hiit.items.splice(+t.dataset.i, 1); saveSoon(); render(); return;
-    case 'hiitEdit': goto('HIIT_SETUP'); return;
-    case 'hiitClear': session.hiit = null; saveSoon(); render(); return;
-    case 'hiitRun': if (session.hiit && session.hiit.items.length) startRun(); return;
+    case 'hiitDel': curH().items.splice(+t.dataset.i, 1); saveSoon(); render(); return;
+    case 'hiitAddGroup': addHiitGroup(); goto('HIIT_SETUP'); return;
+    case 'hiitEdit': session.hiitIdx = +t.dataset.g; goto('HIIT_SETUP'); return;
+    case 'hiitClear': { session.hiits.splice(+t.dataset.g, 1); session.hiitIdx = Math.max(0, Math.min(session.hiitIdx, session.hiits.length - 1)); saveSoon(); render(); return; }
+    case 'hiitRun': { if (t.dataset.g !== undefined) session.hiitIdx = +t.dataset.g; if (curH() && curH().items.length) startRun(); return; }
     case 'hiitRound': {
-      const it = session.hiit.items[+t.dataset.i];
+      const it = session.hiits[+t.dataset.g].items[+t.dataset.i];
       it.doneRounds = Math.max(0, (+it.doneRounds || 0) + parseInt(t.dataset.d));
       saveSoon(); render(); return;
     }
     case 'hiitLoad': {
-      const it = session.hiit.items[+t.dataset.i];
+      const it = session.hiits[+t.dataset.g].items[+t.dataset.i];
       const next = Math.round(((+it.load || 0) + parseFloat(t.dataset.d)) * 100) / 100;
       it.load = next <= 0 ? null : next;   // ≤0 → 徒手
       saveSoon(); render(); return;
@@ -724,9 +734,9 @@ function onInput(ev) {
   if (kind === 'w') { setOf(t).weight = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'r') { setOf(t).reps = v === '' ? null : parseInt(v); saveSoon(); return; }
   if (kind === 'rpe') { setOf(t).rpe = v === '' ? null : parseFloat(v); saveSoon(); return; }
-  if (kind === 'hp') { const k = t.dataset.k; session.hiit.params[k] = v === '' ? 0 : parseInt(v); saveSoon(); return; }
-  if (kind === 'hiitRound') { session.hiit.items[+t.dataset.i].doneRounds = v === '' ? 0 : parseInt(v); saveSoon(); return; }
-  if (kind === 'hiitLoad') { session.hiit.items[+t.dataset.i].load = v === '' ? null : parseFloat(v); saveSoon(); return; }
+  if (kind === 'hp') { const k = t.dataset.k; curH().params[k] = v === '' ? 0 : parseInt(v); saveSoon(); return; }
+  if (kind === 'hiitRound') { session.hiits[+t.dataset.g].items[+t.dataset.i].doneRounds = v === '' ? 0 : parseInt(v); saveSoon(); return; }
+  if (kind === 'hiitLoad') { session.hiits[+t.dataset.g].items[+t.dataset.i].load = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'cMin') { session.cardio[+t.dataset.c].minutes = v === '' ? null : parseInt(v); saveSoon(); return; }
   if (kind === 'cKm') { session.cardio[+t.dataset.c].km = v === '' ? null : parseFloat(v); saveSoon(); return; }
   if (kind === 'cInt') { session.cardio[+t.dataset.c].intensity = t.value; saveSoon(); return; }
@@ -748,8 +758,21 @@ function updatePickList(id, pool, parts) {
   }
 }
 
+const DEFAULT_HIIT = () => ({ workSec: 20, restSec: 10, rounds: 1, roundRestSec: 60 });
+// 新增一組 HIIT（代號 A、B、C…）並設為目前編輯組；參數沿用上一組
+function addHiitGroup() {
+  const used = new Set(session.hiits.map(g => g.tag));
+  let tag = 'A';
+  for (let i = 0; i < 26; i++) { const t = String.fromCharCode(65 + i); if (!used.has(t)) { tag = t; break; } }
+  const prev = session.hiits[session.hiits.length - 1];
+  session.hiits.push({ tag, params: prev ? { ...prev.params } : DEFAULT_HIIT(), items: [] });
+  session.hiitIdx = session.hiits.length - 1;
+}
+// 確保有一組可編輯（有空組就沿用，不重複新增）
 function ensureHiit() {
-  if (!session.hiit) session.hiit = { params: { workSec: 20, restSec: 10, rounds: 1, roundRestSec: 60 }, items: [] };
+  const empty = session.hiits.findIndex(g => !g.items.length);
+  if (empty >= 0) session.hiitIdx = empty;
+  else addHiitGroup();
 }
 
 let toastT;
