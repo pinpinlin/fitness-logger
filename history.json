@@ -4,8 +4,8 @@
     "label": "臂腿",
     "note": "## 下次調整",
     "hiitParams": {
-      "HIIT輪間休": 90,
       "HIIT每項秒": 20,
+      "HIIT輪間休": 90,
       "HIIT項間休": 10,
       "HIIT輪數": 3
     },
@@ -196,8 +196,8 @@
     "label": "肩腿",
     "note": "## 下次調整",
     "hiitParams": {
-      "HIIT輪間休": 60,
       "HIIT每項秒": 20,
+      "HIIT輪間休": 60,
       "HIIT項間休": 10,
       "HIIT輪數": 3
     },

@@ -1,10 +1,10 @@
 // sw.js — 離線快取（precache + cache-first）。每次部署（含 exercises.json 重生）bump CACHE。
-const CACHE = 'fl-v11';
+const CACHE = 'fl-v12';
 const SHELL = [
   './', './index.html', './styles.css', './app.js',
   './lib/format.js', './lib/session.js', './lib/storage.js',
   './manifest.webmanifest', './exercises.json',
-  './summary-block.txt', './summary-hiit-block.txt', './summary-cardio-block.txt', './history.json',
+  './summary-block.txt', './summary-hiit-block.txt', './summary-cardio-block.txt', './history.json', './version.json',
   './icons/icon-192.png', './icons/icon-512-maskable.png', './icons/apple-touch-icon-180.png'
 ];
 
@@ -17,6 +17,11 @@ self.addEventListener('activate', (e) => {
     caches.keys().then(keys => Promise.all(keys.filter(k => k !== CACHE).map(k => caches.delete(k))))
       .then(() => self.clients.claim())
   );
+});
+
+// 讓頁面查詢目前生效的快取版本（app 顯示版本號用）
+self.addEventListener('message', (e) => {
+  if (e.data === 'version' && e.ports && e.ports[0]) e.ports[0].postMessage({ cache: CACHE });
 });
 
 self.addEventListener('fetch', (e) => {

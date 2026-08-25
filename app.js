@@ -8,7 +8,10 @@ let exercises = [], byPart = {}, exByName = {};
 let blocks = { summary: '', hiitSummary: '', cardioSummary: '' };
 let pastLogs = [];          // history.json：過去場次（新→舊）
 let histOpen = null;        // 歷史頁展開中的場次索引
-let histScreen = false;     // 歷史頁開啟中（獨立於 session，未開始訓練也能看）
+let histScreen = false;
+let verInfo = null;      // version.json：資料產生時間與筆數
+let swVer = '';          // 目前生效的 SW 快取版本
+let swUpdate = false;    // 有新版 SW 等待啟用     // 歷史頁開啟中（獨立於 session，未開始訓練也能看）
 let history = {}, prefs = {};
 let session = null;
 let setupParts = [];
@@ -30,14 +33,15 @@ const num = v => (v === null || v === undefined || v === '') ? '' : v;
 
 async function boot() {
   try {
-    const [ex, sb, hb, cb, hist] = await Promise.all([
+    const [ex, sb, hb, cb, hist, ver] = await Promise.all([
       fetch('exercises.json').then(r => r.json()),
       fetch('summary-block.txt').then(r => r.text()),
       fetch('summary-hiit-block.txt').then(r => r.text()).catch(() => ''),
       fetch('summary-cardio-block.txt').then(r => r.text()).catch(() => ''),
-      fetch('history.json').then(r => r.json()).catch(() => [])
+      fetch('history.json').then(r => r.json()).catch(() => []),
+      fetch('version.json').then(r => r.json()).catch(() => null)
     ]);
-    exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb }; pastLogs = hist;
+    exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb }; pastLogs = hist; verInfo = ver;
   } catch (e) {
     app.innerHTML = `<div class="card">載入動作資料失敗，請確認連線後重開。<br><span class="muted small">${esc(e.message)}</span></div>`;
     return;
@@ -56,6 +60,7 @@ async function boot() {
   pendingResume = !!(session && hasContent(session));
   render();
   startTicker();
+  probeSW();
 }
 
 // 舊 session 補上新欄位；單一 hiit → hiits 陣列（一場可多組 HIIT）
@@ -83,6 +88,41 @@ function derivedParts(s) {
   return PART_ORDER.filter(p => set.has(p));
 }
 const exportSession = () => ({ ...session, parts: derivedParts(session) });
+
+
+/* ---------- 版本資訊 ---------- */
+// 問 SW 目前生效的快取版本；並偵測是否有新版等待啟用
+async function probeSW() {
+  try {
+    const reg = await navigator.serviceWorker.getRegistration();
+    if (reg) {
+      swUpdate = !!reg.waiting;
+      reg.addEventListener("updatefound", () => { swUpdate = true; render(); });
+    }
+    const ctrl = navigator.serviceWorker.controller;
+    if (ctrl) {
+      swVer = await new Promise(res => {
+        const ch = new MessageChannel();
+        const t = setTimeout(() => res(""), 1200);
+        ch.port1.onmessage = e => { clearTimeout(t); res((e.data && e.data.cache) || ""); };
+        ctrl.postMessage("version", [ch.port2]);
+      });
+    }
+  } catch { /* 忽略 */ }
+  render();
+}
+
+// 版本列（開場與歷史頁底部）
+function versionLine() {
+  const bits = [];
+  const v = (verInfo && verInfo.sw) || swVer;
+  if (v) bits.push(v);
+  if (verInfo) bits.push("資料 " + (verInfo.latestLog || "—") + "（" + verInfo.sessions + " 場／" + verInfo.exercises + " 動作）");
+  if (verInfo && verInfo.generated) bits.push("更新 " + verInfo.generated);
+  if (!bits.length) return "";
+  return "<div class=\"verline\">" + esc(bits.join(" · ")) +
+    (swUpdate ? "<br><span class=\"vernew\">🔄 有新版本，關掉 app 重開即可更新</span>" : "") + "</div>";
+}
 
 /* ---------- render ---------- */
 function render() {
@@ -124,7 +164,8 @@ function renderSetup() {
       <div class="chip mode" data-act="mode" data-m="HIIT"><b>HIIT</b><span>計時循環</span></div>
       <div class="chip mode" data-act="mode" data-m="有氧"><b>有氧</b><span>時間／距離</span></div>
     </div>
-    <div class="row"><button class="ghost" data-act="histOpen" style="width:100%">📖 看過去紀錄（${pastLogs.length} 場）</button></div>`;
+    <div class="row"><button class="ghost" data-act="histOpen" style="width:100%">📖 看過去紀錄（${pastLogs.length} 場）</button></div>
+    ${versionLine()}`;
 }
 
 function renderParts() {
@@ -529,6 +570,7 @@ function renderHistory() {
     <h1>訓練紀錄</h1>
     <p class="sub">${pastLogs.length} 場（新→舊）· 點日期展開</p>
     ${rows || '<p class="muted">尚無紀錄</p>'}
+    ${versionLine()}
     <div class="bottombar"><button class="ghost" data-act="histBack">← 返回</button></div>`;
 }
 
