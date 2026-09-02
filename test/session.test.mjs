@@ -95,14 +95,14 @@ test('adjustWeight：null→+2.5=2.5；2.5→-2.5→null(自重)', () => {
   assert.equal(set.weight, null);
 });
 
-test('adjustWeight 可跨 0 進輔助區（負值＝機台幫忙扛）', () => {
-  const set = { weight: 2.5, reps: 10, rpe: null };
-  assert.equal(adjustWeight(set, -2.5), null, '歸零＝自重');
-  assert.equal(adjustWeight(set, -2.5), -2.5, '再往下＝輔助 2.5kg');
-  assert.equal(adjustWeight(set, -2.5), -5);
-  assert.equal(adjustWeight(set, 2.5), -2.5, '往回加');
-  assert.equal(adjustWeight(set, 2.5), null, '回到自重');
-  assert.equal(adjustWeight(set, 2.5), 2.5, '再加變負重');
+test('adjustWeight 可跨 0 進輔助區（負值＝機台幫忙扛；UI step 為 ±2）', () => {
+  const set = { weight: 2, reps: 10, rpe: null };
+  assert.equal(adjustWeight(set, -2), null, '歸零＝自重');
+  assert.equal(adjustWeight(set, -2), -2, '再往下＝輔助 2kg');
+  assert.equal(adjustWeight(set, -2), -4);
+  assert.equal(adjustWeight(set, 2), -2, '往回加');
+  assert.equal(adjustWeight(set, 2), null, '回到自重');
+  assert.equal(adjustWeight(set, 2), 2, '再加變負重');
 });
 
 test('adjustReps：null→+1=1；1→-1=0；0→-1=0(下限)', () => {

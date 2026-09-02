@@ -40,10 +40,10 @@
     "label": "臂腿",
     "note": "## 下次調整",
     "hiitParams": {
-      "HIIT項間休": 10,
+      "HIIT輪間休": 60,
       "HIIT輪數": 1,
       "HIIT每項秒": 60,
-      "HIIT輪間休": 60
+      "HIIT項間休": 10
     },
     "items": [
       {
@@ -158,10 +158,10 @@
     "label": "臂腿",
     "note": "## 下次調整",
     "hiitParams": {
-      "HIIT項間休": 10,
+      "HIIT輪間休": 90,
       "HIIT輪數": 3,
       "HIIT每項秒": 20,
-      "HIIT輪間休": 90
+      "HIIT項間休": 10
     },
     "items": [
       {
@@ -350,10 +350,10 @@
     "label": "肩腿",
     "note": "## 下次調整",
     "hiitParams": {
-      "HIIT項間休": 10,
+      "HIIT輪間休": 60,
       "HIIT輪數": 3,
       "HIIT每項秒": 20,
-      "HIIT輪間休": 60
+      "HIIT項間休": 10
     },
     "items": [
       {

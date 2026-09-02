@@ -301,9 +301,9 @@ function renderLog() {
           <button class="step" data-act="hiitRound" data-g="${gi}" data-i="${i}" data-d="1">＋</button>
           <span class="unit">輪</span></div>
         <div class="row srow"><span class="muted small" style="width:34px">負重</span>
-          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="-2.5">−</button>
+          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="-2">−</button>
           <input inputmode="decimal" data-inp="hiitLoad" data-g="${gi}" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
-          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="2.5">＋</button>
+          <button class="step" data-act="hiitLoad" data-g="${gi}" data-i="${i}" data-d="2">＋</button>
           <span class="unit">kg</span></div>
       </div>`).join('')}
       <div class="row srow" style="margin-top:6px"><button class="tiny primary" data-act="hiitRun" data-g="${gi}">▶ 開始導引</button></div>
@@ -340,9 +340,9 @@ function setBlock(e, ei, s, si) {
   return `<div class="setblk">
     <div class="row srow">
       <span class="setno">${si + 1}</span>
-      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="-2.5">−</button>
+      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="-2">−</button>
       <input inputmode="decimal" data-inp="w" data-e="${ei}" data-s="${si}" value="${num(s.weight)}" placeholder="自重">
-      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="2.5">＋</button>
+      <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="2">＋</button>
       <span class="unit">${Number(s.weight) < 0 ? '<span class="assist">輔助</span>' : 'kg'}</span></div>
     <div class="row srow">
       <span class="setno"></span>
@@ -399,9 +399,9 @@ function renderHiitSetup() {
         <div class="row srow"><span class="setno">${i + 1}</span><span class="spacer">${esc(it.name)}</span>
           <button class="tiny ghost" data-act="hiitDel" data-i="${i}">✕</button></div>
         <div class="row srow"><span class="muted small" style="width:34px">負重</span>
-          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="-2.5">−</button>
-          <input inputmode="decimal" data-inp="hiitLoad" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
-          <button class="step" data-act="hiitLoad" data-i="${i}" data-d="2.5">＋</button>
+          <button class="step" data-act="hiitLoad" data-g="${session.hiitIdx}" data-i="${i}" data-d="-2">−</button>
+          <input inputmode="decimal" data-inp="hiitLoad" data-g="${session.hiitIdx}" data-i="${i}" value="${num(it.load)}" placeholder="徒手">
+          <button class="step" data-act="hiitLoad" data-g="${session.hiitIdx}" data-i="${i}" data-d="2">＋</button>
           <span class="unit">kg</span></div>
       </div>`).join('') : ''}
     <input data-inp="hiitSearch" placeholder="搜尋 HIIT 動作…" value="${esc(hiitSearch)}" style="margin-top:10px">
