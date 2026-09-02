@@ -79,6 +79,8 @@ const hGroups = s => (s.hiits || []).filter(g => (g.items || []).length);
 const hasContent = s => (s.entries || []).length || hGroups(s).length || (s.cardio || []).length;
 const typeOf = e => (e && e.型態) ? e.型態 : ['重訓'];
 const poolOf = t => exercises.filter(e => typeOf(e).includes(t));
+// 重訓模式的動作池：重訓 ＋ HIIT 動作（HIIT 動作也可能單獨做，用組數記錄，如開合跳 100 下）；排除純有氧
+const liftPool = () => exercises.filter(e => { const t = typeOf(e); return t.includes('重訓') || t.includes('HIIT'); });
 
 // 檔名/frontmatter 用的部位＝重訓勾選 ∪ HIIT 動作 ∪ 有氧項目 的部位
 function derivedParts(s) {
@@ -186,7 +188,7 @@ function renderPick() {
   app.className = 'hasbar';
   const term = search.trim();
   const picked = sgMode ? new Set(sgSel) : new Set(session.entries.map(e => e.name));
-  const pool = poolOf('重訓');
+  const pool = liftPool();
   let body = '';
   if (term) {
     body = `<div class="sec-title">搜尋結果</div>${exRows(pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), picked)}`;
@@ -232,11 +234,15 @@ function bestLabel(name, currentSets) {
     if (!best || ww > best.w || (ww === best.w && rr > best.r)) best = { w: ww, r: rr };
   };
   const ex = exByName[name];
-  if (ex && ex.best) { const m = ex.best.match(/^(自重|[\d.]+)×(\d+)/); if (m) consider(m[1] === '自重' ? null : parseFloat(m[1]), parseInt(m[2])); }
+  if (ex && ex.best) {
+    const m = ex.best.match(/^(自重(?:-[\d.]+)?|[\d.]+)×(\d+)/);
+    if (m) { const rw = m[1]; consider(rw.startsWith('自重') ? (rw.length > 2 ? -parseFloat(rw.slice(3)) : 0) : parseFloat(rw), parseInt(m[2])); }
+  }
   const h = history[name]; if (h && h.sets) h.sets.forEach(s => consider(s.weight, s.reps));
   (currentSets || []).forEach(s => consider(s.weight, s.reps));
   if (!best) return null;
-  return best.w ? `${best.w}×${best.r}` : `自重×${best.r}`;
+  const lab = best.w === 0 ? '自重' : (best.w < 0 ? `自重-${Math.abs(best.w)}` : String(best.w));
+  return `${lab}×${best.r}`;
 }
 
 /* ---------- LOG（本場 hub）---------- */
@@ -337,7 +343,7 @@ function setBlock(e, ei, s, si) {
       <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="-2.5">−</button>
       <input inputmode="decimal" data-inp="w" data-e="${ei}" data-s="${si}" value="${num(s.weight)}" placeholder="自重">
       <button class="step" data-act="w" data-e="${ei}" data-s="${si}" data-d="2.5">＋</button>
-      <span class="unit">kg</span></div>
+      <span class="unit">${Number(s.weight) < 0 ? '<span class="assist">輔助</span>' : 'kg'}</span></div>
     <div class="row srow">
       <span class="setno"></span>
       <button class="step" data-act="r" data-e="${ei}" data-s="${si}" data-d="-1">−</button>
@@ -768,7 +774,7 @@ function onInput(ev) {
   const t = ev.target.closest('[data-inp]'); if (!t) return;
   const kind = t.dataset.inp;
   const v = t.value.trim();
-  if (kind === 'search') { search = v; updatePickList('picklist', poolOf('重訓'), session.parts); return; }
+  if (kind === 'search') { search = v; updatePickList('picklist', liftPool(), session.parts); return; }
   if (kind === 'hiitSearch') { hiitSearch = v; updatePickList('hiitlist', poolOf('HIIT'), PART_ORDER); return; }
   if (kind === 'overall') { session.overallNote = t.value; saveSoon(); return; }
   if (kind === 'date') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { session.date = v; saveSoon(); } return; }

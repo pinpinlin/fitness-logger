@@ -51,6 +51,14 @@ test('formatSetToken：一般/自重/無RPE/小數', () => {
   assert.equal(formatSetToken({ weight: 2.5, reps: 12, rpe: null }), '2.5×12');
 });
 
+test('formatSetToken 輔助重量：負數→自重-N；0 與 null 皆為自重', () => {
+  assert.equal(formatSetToken({ weight: -20, reps: 8, rpe: 9 }), '自重-20×8@9');
+  assert.equal(formatSetToken({ weight: -7.5, reps: 10, rpe: null }), '自重-7.5×10');
+  assert.equal(formatSetToken({ weight: 0, reps: 12, rpe: null }), '自重×12');
+  assert.equal(formatSetToken({ weight: null, reps: 12, rpe: null }), '自重×12');
+  assert.equal(formatSetToken({ weight: 20, reps: 8, rpe: null }), '20×8');
+});
+
 test('formatSetsField 多組串接、跳過無 reps', () => {
   const sets = [{ weight: 80, reps: 5, rpe: 9 }, { weight: 85, reps: 5, rpe: 10 }, { weight: 90, reps: null, rpe: null }];
   assert.equal(formatSetsField(sets), '80×5@9, 85×5@10');
@@ -96,9 +104,9 @@ test('buildMd 契約結構＋內嵌 summaryBlock＋備註省略', () => {
   assert.ok(!md.includes('(備註:: )'), '空備註不應輸出');
 });
 
-test('summary-block 用自重感知正則（與 parser.test.mjs 一致）', () => {
-  assert.ok(summaryBlock.includes('(?:(自重|[\\d.]+)\\s*[×x]\\s*)?([\\d+]+)'),
-    'summary-block.txt 必須含自重感知 token 正則');
+test('summary-block 的 token 正則支援 自重／輔助（自重-N）／數字', () => {
+  assert.ok(summaryBlock.includes('(?:(自重(?:-[\\d.]+)?|[\\d.]+)\\s*[×x]\\s*)?([\\d+]+)'),
+    'summary-block.txt 必須含「自重／自重-N／數字」三態 token 正則');
 });
 
 /* ── 計畫三：HIIT／有氧 ── */

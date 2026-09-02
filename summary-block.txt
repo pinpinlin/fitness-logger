@@ -11,11 +11,12 @@ for (const line of raw.split('\n')) {
   const tokens = setsM[1].split(',').map(s => s.trim()).filter(Boolean);
   let best = null; const disp = []; const rpes = [];
   for (const t of tokens) {
-    const mm = t.match(/^(?:(自重|[\d.]+)\s*[×x]\s*)?([\d+]+)(?:@([\d.]+))?$/);
+    const mm = t.match(/^(?:(自重(?:-[\d.]+)?|[\d.]+)\s*[×x]\s*)?([\d+]+)(?:@([\d.]+))?$/);
     if (!mm) { disp.push(t); continue; }
-    const w = (mm[1] && mm[1] !== '自重') ? parseFloat(mm[1]) : 0;
+    const raw = mm[1] || '自重';
+    const w = raw.startsWith('自重') ? (raw.length > 2 ? -parseFloat(raw.slice(3)) : 0) : parseFloat(raw);
     const repsNum = parseInt(mm[2]);
-    const lbl = w ? `${mm[1]}×${mm[2]}` : `自重×${mm[2]}`;
+    const lbl = `${raw}×${mm[2]}`;
     disp.push(lbl);
     if (!best || w > best.w || (w === best.w && repsNum > best.r)) best = { w, r: repsNum, str: lbl };
     if (mm[3]) rpes.push(parseFloat(mm[3]));
