@@ -413,7 +413,9 @@ function renderHiitSetup() {
 }
 
 /* ---------- HIIT 導引 ---------- */
-const PHASE = { work: { label: '運動', cls: 'run-work' }, itemRest: { label: '項間休息', cls: 'run-rest' }, roundRest: { label: '輪間休息', cls: 'run-round' }, done: { label: '完成', cls: 'run-done' } };
+// 按下「開始導引」後先給 PREP_SEC 秒就位；只在整場開頭一次，不計入總時長。
+const PREP_SEC = 5;
+const PHASE = { prep: { label: '準備', cls: 'run-prep' }, work: { label: '運動', cls: 'run-work' }, itemRest: { label: '項間休息', cls: 'run-rest' }, roundRest: { label: '輪間休息', cls: 'run-round' }, done: { label: '完成', cls: 'run-done' } };
 
 function renderHiitRun() {
   const r = session.run, h = curH();
@@ -432,8 +434,8 @@ function renderHiitRun() {
   const next = peekNext(r, h);
   const loadTag = l => (l !== null && l !== undefined && l !== '') ? ` <span class="runload">${l}kg</span>` : '';
   app.innerHTML = `<div class="runbox">
-    <div class="runphase">${PHASE[r.phase].label} ｜ 第 ${r.round}/${h.params.rounds} 輪 ｜ ${r.idx + 1}/${h.items.length}</div>
-    <div class="runname">${r.phase === 'work' ? esc(cur.name) + loadTag(cur.load) : '休息'}</div>
+    <div class="runphase">${r.phase === 'prep' ? '準備 ｜ 就位' : `${PHASE[r.phase].label} ｜ 第 ${r.round}/${h.params.rounds} 輪 ｜ ${r.idx + 1}/${h.items.length}`}</div>
+    <div class="runname">${(r.phase === 'work' || r.phase === 'prep') ? esc(cur.name) + loadTag(cur.load) : '休息'}</div>
     <div class="runbig" id="runbig">${left}</div>
     ${next ? `<div class="runnextlabel">下一個</div><div class="runnext">${esc(next.name)}${loadTag(next.load)}</div>`
       : '<div class="runnextlabel">最後一段</div>'}
@@ -451,18 +453,19 @@ function leftSec(r) {
 }
 // 回傳下一個「運動」項目物件（含 load），無則 null
 function peekNext(r, h) {
-  if (r.phase === 'work') return r.idx < h.items.length - 1 ? h.items[r.idx + 1] : (r.round < h.params.rounds ? h.items[0] : null);
+  // prep 與 work 一樣：畫面上「現在」顯示的是 items[idx]，所以下一個是 idx+1
+  if (r.phase === 'work' || r.phase === 'prep') return r.idx < h.items.length - 1 ? h.items[r.idx + 1] : (r.round < h.params.rounds ? h.items[0] : null);
   if (r.phase === 'itemRest') return h.items[r.idx + 1] || null;
   if (r.phase === 'roundRest') return h.items[0] || null;
   return null;
 }
 function phaseSeconds(phase) {
   const p = curH().params;
-  return phase === 'work' ? +p.workSec : phase === 'itemRest' ? +p.restSec : +p.roundRestSec;
+  return phase === 'prep' ? PREP_SEC : phase === 'work' ? +p.workSec : phase === 'itemRest' ? +p.restSec : +p.roundRestSec;
 }
 function startRun() {
   const h = curH();
-  session.run = { round: 1, idx: 0, phase: 'work', phaseEndAt: Date.now() + phaseSeconds('work') * 1000, paused: false, pausedLeft: 0, beeped: -1, noWakeLock: false };
+  session.run = { round: 1, idx: 0, phase: 'prep', phaseEndAt: Date.now() + PREP_SEC * 1000, paused: false, pausedLeft: 0, beeped: -1, noWakeLock: false };
   session.screen = 'HIIT_RUN';
   initAudio(); requestWake();
   store.saveSession(session); render();
@@ -470,7 +473,8 @@ function startRun() {
 // 推進到下一段；回傳是否結束
 function advance() {
   const r = session.run, h = curH(), n = h.items.length, R = +h.params.rounds;
-  if (r.phase === 'work') {
+  if (r.phase === 'prep') { r.phase = 'work'; }   // 準備完直接開第一項，不動 idx/round
+  else if (r.phase === 'work') {
     if (r.idx < n - 1) r.phase = +h.params.restSec > 0 ? 'itemRest' : 'workNext';
     else if (r.round < R) r.phase = +h.params.roundRestSec > 0 ? 'roundRest' : 'roundNext';
     else { finishRun(true); return; }

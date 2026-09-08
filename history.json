@@ -120,9 +120,9 @@
     "note": "## 下次調整",
     "hiitParams": {
       "HIIT項間休": 10,
-      "HIIT輪數": 1,
+      "HIIT每項秒": 60,
       "HIIT輪間休": 60,
-      "HIIT每項秒": 60
+      "HIIT輪數": 1
     },
     "items": [
       {
@@ -238,9 +238,9 @@
     "note": "## 下次調整",
     "hiitParams": {
       "HIIT項間休": 10,
-      "HIIT輪數": 3,
+      "HIIT每項秒": 20,
       "HIIT輪間休": 90,
-      "HIIT每項秒": 20
+      "HIIT輪數": 3
     },
     "items": [
       {
@@ -430,9 +430,9 @@
     "note": "## 下次調整",
     "hiitParams": {
       "HIIT項間休": 10,
-      "HIIT輪數": 3,
+      "HIIT每項秒": 20,
       "HIIT輪間休": 60,
-      "HIIT每項秒": 20
+      "HIIT輪數": 3
     },
     "items": [
       {

@@ -119,9 +119,11 @@ button.linked { background: rgba(155,140,240,.15); border-color: var(--sg); colo
 .runtip { font-size: 12px; color: var(--muted); margin-top: 10px; }
 .runpaused { font-size: 15px; font-weight: 600; color: var(--warn); margin-top: 10px; }
 .runhint { font-size: 12px; color: var(--warn); margin-top: 10px; }
+body:has(#app.run-prep) { background: #2a1d33; }
 body:has(#app.run-work) { background: #0f2a1b; }
 body:has(#app.run-rest) { background: #2e2110; }
 body:has(#app.run-round) { background: #0f1e33; }
+#app.run-prep .runbig { color: var(--sg); }
 #app.run-work .runbig { color: var(--good); }
 #app.run-rest .runbig { color: var(--warn); }
 #app.run-round .runbig { color: var(--accent); }
