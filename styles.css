@@ -133,3 +133,37 @@ body:has(#app.run-round) { background: #0f1e33; }
 .vernew { color: var(--warn); font-size: 12px; }
 
 .assist { color: var(--warn); font-size: 11px; }
+
+/* 拖拉排序 */
+.cardhead { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.grip { color: var(--muted); font-size: 18px; line-height: 1; padding: 6px 6px 6px 0; margin-left: -4px;
+  touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.draghelp { margin: 2px 2px 4px; font-size: 11.5px; line-height: 1.45; }
+/* 拖拉中：卡片只留標題列，整場一眼看完 */
+#app.dragging .card[data-ei] > :not(.cardhead),
+#app.dragging .sgbox > .srow { display: none; }
+#app.dragging .card[data-ei] .cardhead button { visibility: hidden; }
+#app.dragging .card.dragsrc { opacity: .3; }
+#app.dragging .card.droptarget { border-color: var(--sg); box-shadow: 0 0 0 2px var(--sg) inset; background: rgba(155,140,240,.14); }
+.dragghost { position: fixed; z-index: 300; margin: 0; pointer-events: none; opacity: .95;
+  border-color: var(--accent); box-shadow: 0 10px 28px rgba(0,0,0,.7); }
+.dragghost > :not(.cardhead) { display: none; }
+.dragghost .cardhead button { visibility: hidden; }
+.dropline { position: fixed; left: 14px; right: 14px; height: 3px; border-radius: 2px; background: var(--accent);
+  z-index: 250; pointer-events: none; display: none; }
+.dropline.insg { background: var(--sg); }
+.draghint { position: fixed; left: 50%; transform: translateX(-50%); bottom: calc(14px + env(safe-area-inset-bottom));
+  width: calc(100% - 24px); max-width: 536px; z-index: 310; background: #16324f; border: 1px solid var(--accent);
+  border-radius: 10px; padding: 10px 12px; font-size: 13px; text-align: center; pointer-events: none; }
+
+/* 復原列 */
+.undo { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 320;
+  display: flex; align-items: center; gap: 12px; width: max-content; max-width: calc(100% - 24px);
+  background: #2a2d33; border: 1px solid var(--line); border-radius: 999px; padding: 6px 6px 6px 16px;
+  box-shadow: 0 8px 22px rgba(0,0,0,.6); font-size: 14px; }
+.undo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.undo button { background: var(--accent); border-color: var(--accent); color: #0b1622; font-weight: 600; border-radius: 999px; }
+
+/* 休息結束：整條閃綠 */
+.timer.done { background: #123d2a; border-color: var(--good); animation: restdone 1s ease-in-out 3; }
+@keyframes restdone { 50% { background: #1f6b47; } }

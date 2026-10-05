@@ -2,7 +2,8 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
-  nextGroupTag, toggleSupersetWithPrev, groupIndices, addSetToGroup, restampDate
+  nextGroupTag, toggleSupersetWithPrev, groupIndices, addSetToGroup, restampDate,
+  moveEntry, normalizeGroups, applyRenames
 } from '../lib/session.js';
 
 /* ── 超級組 ── */
@@ -163,4 +164,59 @@ test('restampDate 之後 commitHistory 用新日期', () => {
   const history = {};
   commitHistory(s, history);
   assert.equal(history['臥推'].date, '2026-08-18');
+});
+
+/* ── 拖拉排序／分組整理 ── */
+const tags = s => s.entries.map(e => `${e.name}${e.sg ? ':' + e.sg : ''}`).join(' ');
+
+test('moveEntry merge：拖到獨立動作上 → 兩個組成新超級組', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  moveEntry(s, 2, { mode: 'merge', target: 0 });
+  assert.equal(tags(s), 'A:A C:A B');
+});
+
+test('moveEntry merge：拖進既有超級組（被誤拆的動作拉回去）', () => {
+  const s = mkSession(['A', 'B', 'C', 'D']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A';
+  moveEntry(s, 3, { mode: 'merge', target: 1 });
+  assert.equal(tags(s), 'A:A B:A D:A C');
+});
+
+test('moveEntry before/after：組內調順序、或插到組外變獨立', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A'; s.entries[2].sg = 'A';
+  moveEntry(s, 2, { mode: 'before', target: 0, sg: 'A' });
+  assert.equal(tags(s), 'C:A A:A B:A', '組內換到最前');
+  moveEntry(s, 0, { mode: 'end' });
+  assert.equal(tags(s), 'A:A B:A C', '拖出組外 → 獨立');
+});
+
+test('moveEntry：組只剩一個動作 → 自動解散', () => {
+  const s = mkSession(['A', 'B', 'C']);
+  s.entries[0].sg = 'A'; s.entries[1].sg = 'A';
+  moveEntry(s, 1, { mode: 'end' });
+  assert.equal(tags(s), 'A C B');
+});
+
+test('normalizeGroups：同代號被拆成兩段 → 後段換新代號', () => {
+  const s = mkSession(['A', 'B', 'C', 'D', 'E']);
+  ['A', 'A', null, 'A', 'A'].forEach((g, i) => { s.entries[i].sg = g; });
+  normalizeGroups(s);
+  assert.equal(tags(s), 'A:A B:A C D:B E:B');
+});
+
+test('moveEntry：拖到自己或不存在的目標 → 不動', () => {
+  const s = mkSession(['A', 'B']);
+  moveEntry(s, 0, { mode: 'merge', target: 0 });
+  moveEntry(s, 0, { mode: 'after', target: 9 });
+  assert.equal(tags(s), 'A B');
+});
+
+test('applyRenames：history 與未完成場次一起換名', () => {
+  const s = mkSession(['舊', 'X']);
+  const h = { 舊: { sets: [{ weight: 10, reps: 12, rpe: null }] } };
+  assert.equal(applyRenames(s, h, { 舊: '新' }), true);
+  assert.equal(s.entries[0].name, '新');
+  assert.deepEqual(Object.keys(h), ['新']);
+  assert.equal(applyRenames(s, h, { 舊: '新' }), false, '第二次無改動');
 });

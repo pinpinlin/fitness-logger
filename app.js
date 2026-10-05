@@ -1,6 +1,7 @@
 import { PART_ORDER, partsLabel, fileName, buildMd, hiitTotalSeconds, fmtDuration } from './lib/format.js';
 import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, commitHistory,
-  toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate } from './lib/session.js';
+  toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate,
+  moveEntry, normalizeGroups, applyRenames } from './lib/session.js';
 import * as store from './lib/storage.js';
 
 const app = document.getElementById('app');
@@ -19,6 +20,12 @@ let search = '', hiitSearch = '';
 let sgMode = false, sgSel = [];   // 選動作頁的超級組圈選模式
 let idc = 1;
 let pendingResume = false;
+
+// 動作改名對照（舊名→新名）：本機 history 與未完成場次在開 app 時自動換名
+const RENAMES = {
+  '後肩 側飛圈俯身 啞鈴': '後肩 側飛鳥俯身 啞鈴',
+  '中肩 側飛鳥 啞鈴': '中肩 側飛鳥 啞鈴 水平'
+};
 
 const saveSoon = debounce(() => { if (session) store.saveSession(session); }, 300);
 function debounce(fn, ms) { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; }
@@ -57,6 +64,9 @@ async function boot() {
     migrate(session);
     if (restampDate(session, todayISO())) store.saveSession(session);
   }
+  if (applyRenames(session, history, RENAMES)) { store.saveHistory(history); if (session) store.saveSession(session); }
+  // entry id 接續既有最大號（重開 app 後 idc 從 1 起算會撞號）
+  for (const e of (session && session.entries) || []) { const n = parseInt(String(e.id || '').slice(1)); if (n >= idc) idc = n + 1; }
   pendingResume = !!(session && hasContent(session));
   render();
   startTicker();
@@ -262,12 +272,13 @@ function renderLog() {
       const ex = exByName[e.name];
       const lastLine = (ex && ex.lastSets)
         ? `<div class="lastsets">上次 <span class="lsdate">${esc((ex.lastDate || '').slice(5))}</span> ${esc(ex.lastSets)}</div>` : '';
-      const canLink = ei > 0;
-      return `<div class="card${g.sg ? ' ingroup' : ''}">
-        <div class="row"><b>${esc(e.name)}</b><span class="spacer"></span>
+      // 🔗 只給「獨立動作」用來接上一個；已在組內的不放（避免誤觸拆組，要移出改用拖拉）
+      const canLink = ei > 0 && !e.sg;
+      return `<div class="card${g.sg ? ' ingroup' : ''}" data-ei="${ei}">
+        <div class="row cardhead"><span class="grip" data-grip="${ei}" title="按住拖拉：排序／拖進超級組">⠿</span><b>${esc(e.name)}</b><span class="spacer"></span>
           <span class="meta muted small">${esc(e.型式)}</span>
-          ${canLink ? `<button class="tiny ${e.sg ? 'linked' : 'ghost'}" data-act="sgToggle" data-e="${ei}" title="與上一個動作連成超級組">🔗</button>` : ''}
-          <button class="tiny ghost" data-act="rmEntry" data-name="${esc(e.name)}">✕</button></div>
+          ${canLink ? `<button class="tiny ghost" data-act="sgToggle" data-e="${ei}" title="與上一個動作連成超級組">🔗</button>` : ''}
+          <button class="tiny ghost" data-act="rmEntry" data-e="${ei}">✕</button></div>
         ${bl ? `<div class="best">最重 ${esc(bl)}</div>` : ''}
         ${lastLine}
         ${e.sets.map((s, si) => setBlock(e, ei, s, si)).join('')}
@@ -276,7 +287,7 @@ function renderLog() {
       </div>`;
     }).join('');
     if (!g.sg) return inner;
-    return `<div class="sgbox">
+    return `<div class="sgbox" data-sg="${g.sg}">
       <div class="sghead">超級組 ${g.sg} · 中間不休息</div>
       ${inner}
       <div class="row srow" style="margin-top:2px"><button class="tiny primary" data-act="addSetGroup" data-e="${g.idx[0]}">＋ 加一輪（全部動作）</button></div>
@@ -327,6 +338,7 @@ function renderLog() {
       <button class="tiny ghost" data-act="histOpen">📖 過去紀錄</button></div>
     <p class="sub">${esc(session.date)} · ${esc(partsLabel(derivedParts(session)) || '—')}</p>
     <div id="timer"></div>
+    ${session.entries.length > 1 ? '<p class="muted small draghelp">按住 ⠿（或長按動作名）拖拉：上下排序；拖到別的動作中間＝組成／加入超級組；拖到框外＝脫離</p>' : ''}
     ${liftCards}${hiitCard}${cardioCards}${empty}
     <div class="bottombar">
       <button class="ghost tiny" data-act="addLift">＋重訓</button>
@@ -636,8 +648,9 @@ function renderTimer() {
   if (!session.restEndAt) { el.innerHTML = ''; app.classList.remove('withtimer'); return; }
   app.classList.add('withtimer');
   const left = Math.round((session.restEndAt - Date.now()) / 1000);
+  restBeep(left);
   if (left <= 0) {
-    el.innerHTML = `<div class="timer"><span class="t" style="color:var(--good)">休息結束</span><span class="spacer"></span>
+    el.innerHTML = `<div class="timer done"><span class="t" style="color:var(--good)">休息結束</span><span class="spacer"></span>
       <button class="tiny" data-act="restClear">關閉</button></div>`;
     return;
   }
@@ -646,6 +659,158 @@ function renderTimer() {
     <span class="muted small">組間休息</span><span class="spacer"></span>
     <button class="tiny" data-act="rest30">+30</button>
     <button class="tiny" data-act="restClear">跳過</button></div>`;
+}
+
+// 組間休息提示音：最後 3 秒短嗶、時間到三聲長嗶＋震動（每次休息只響一輪）
+let restBeepKey = null, restTickLeft = null;
+function startRest() {
+  initAudio();   // 在使用者點擊當下解鎖音效，倒數結束時才響得出來
+  session.restEndAt = Date.now() + (session.restSeconds || 90) * 1000;
+}
+function restBeep(left) {
+  const key = session.restEndAt;
+  if (left > 0 && left <= 3 && restTickLeft !== left) { restTickLeft = left; beep(660, 0.08); }
+  if (left <= 0 && restBeepKey !== key) {
+    restBeepKey = key; restTickLeft = null;
+    if (left < -5) return;   // app 在背景時就結束了，回來不補響
+    [0, 260, 520].forEach(ms => setTimeout(() => beep(1050, 0.22), ms));
+    try { navigator.vibrate && navigator.vibrate([200, 100, 200, 100, 200]); } catch {}
+  }
+}
+
+/* ---------- 復原（刪動作／刪組／組超級組／拖拉都可撤回一步）---------- */
+let undoT = null;
+function withUndo(msg, fn) {
+  const snap = JSON.stringify(session);
+  fn();
+  if (JSON.stringify(session) === snap) { render(); return; }   // 沒變就不提示
+  store.saveSession(session); render();
+  let el = document.querySelector('.undo');
+  if (!el) {
+    el = document.createElement('div'); el.className = 'undo';
+    el.addEventListener('click', ev => {
+      if (!ev.target.closest('button') || !el._snap) return;
+      session = JSON.parse(el._snap); el._snap = null;
+      store.saveSession(session); el.remove(); render();
+    });
+    document.body.appendChild(el);
+  }
+  el._snap = snap;
+  el.innerHTML = `<span>${esc(msg)}</span><button class="tiny">復原</button>`;
+  clearTimeout(undoT); undoT = setTimeout(() => el.remove(), 8000);
+}
+
+/* ---------- 拖拉排序（記錄頁的重訓動作卡）----------
+   按住 ⠿ 立即拖；或長按動作名那一列 400ms。拖拉時卡片收合成只剩標題，整場一眼看完。
+   放的位置：卡片上緣／下緣＝插在前／後（該卡在超級組內就一起加入）；卡片中段＝與它組成／加入超級組；
+   卡片之間的空隙＝獨立動作（在超級組框內的空隙則加入該組）。 */
+let drag = null, press = null, suppressClickUntil = 0;
+app.addEventListener('pointerdown', ev => {
+  if (!session || session.screen !== 'LOG' || drag || pendingResume || histScreen) return;
+  const card = ev.target.closest('.card[data-ei]'); if (!card) return;
+  const grip = ev.target.closest('[data-grip]');
+  if (!grip && (!ev.target.closest('.cardhead') || ev.target.closest('button, input'))) return;
+  const from = +card.dataset.ei;
+  if (grip) { ev.preventDefault(); beginDrag(from, ev.clientY); return; }
+  press = { x: ev.clientX, y: ev.clientY, t: setTimeout(() => { const y = press.y; press = null; beginDrag(from, y); }, 400) };
+});
+window.addEventListener('pointermove', ev => {
+  if (press && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 8) { clearTimeout(press.t); press = null; }
+  if (drag) { ev.preventDefault(); drag.y = ev.clientY; dragUpdate(); }
+}, { passive: false });
+window.addEventListener('pointerup', () => endPress(true));
+window.addEventListener('pointercancel', () => endPress(false));
+// iOS：拖拉中擋掉捲動（否則系統接手變成捲頁並送 pointercancel）
+document.addEventListener('touchmove', ev => { if (drag) ev.preventDefault(); }, { passive: false });
+// 拖完放手時，手指下的按鈕（如另一張卡的 ✕）不可被觸發
+window.addEventListener('click', ev => { if (Date.now() < suppressClickUntil) { ev.stopPropagation(); ev.preventDefault(); } }, true);
+document.addEventListener('contextmenu', ev => { if (drag || press) ev.preventDefault(); });
+
+function endPress(commit) {
+  if (press) { clearTimeout(press.t); press = null; }
+  if (drag) endDrag(commit);
+}
+function beginDrag(from, y) {
+  const card = app.querySelector(`.card[data-ei="${from}"]`); if (!card) return;
+  drag = { from, y, op: null, raf: 0 };
+  app.classList.add('dragging');
+  card.classList.add('dragsrc');
+  // 收合後把被拖的卡捲回手指底下
+  const r = card.getBoundingClientRect();
+  window.scrollBy(0, r.top + r.height / 2 - y);
+  const r2 = card.getBoundingClientRect();
+  const ghost = card.cloneNode(true);
+  ghost.className = 'card dragghost'; ghost.removeAttribute('data-ei');
+  ghost.style.left = r2.left + 'px'; ghost.style.width = r2.width + 'px';
+  drag.ghost = ghost; drag.gh = r2.height;
+  drag.line = Object.assign(document.createElement('div'), { className: 'dropline' });
+  drag.hint = Object.assign(document.createElement('div'), { className: 'draghint' });
+  document.body.append(ghost, drag.line, drag.hint);
+  try { navigator.vibrate && navigator.vibrate(15); } catch {}
+  dragUpdate();
+  // 手指靠近上下緣時自動捲動
+  const loop = () => {
+    if (!drag) return;
+    const H = window.innerHeight, edge = 80;
+    const v = drag.y < edge ? -(edge - drag.y) / 6 : drag.y > H - 110 ? (drag.y - (H - 110)) / 6 : 0;
+    if (v) { window.scrollBy(0, v); dragUpdate(); }
+    drag.raf = requestAnimationFrame(loop);
+  };
+  drag.raf = requestAnimationFrame(loop);
+}
+function dragOp(y) {
+  const from = drag.from;
+  const cards = [...app.querySelectorAll('.card[data-ei]')].filter(c => +c.dataset.ei !== from);
+  if (!cards.length) return null;
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    if (y < r.top || y > r.bottom) continue;
+    const t = +c.dataset.ei, sg = session.entries[t].sg, rel = (y - r.top) / r.height;
+    if (rel < 0.3) return { mode: 'before', target: t, sg, lineY: r.top - 3 };
+    if (rel > 0.7) return { mode: 'after', target: t, sg, lineY: r.bottom + 3 };
+    return { mode: 'merge', target: t, el: c };
+  }
+  // 空隙：在超級組框內 → 加入該組；否則獨立
+  let box = null;
+  for (const b of app.querySelectorAll('.sgbox')) { const r = b.getBoundingClientRect(); if (y >= r.top && y <= r.bottom) box = b; }
+  let best = null;
+  for (const c of cards) {
+    const r = c.getBoundingClientRect();
+    const d = y < r.top ? r.top - y : y - r.bottom;
+    if (!best || d < best.d) best = { d, c, r, above: y < r.top };
+  }
+  const t = +best.c.dataset.ei;
+  const sg = box && box.contains(best.c) ? box.dataset.sg : null;
+  return best.above ? { mode: 'before', target: t, sg, lineY: best.r.top - 3 } : { mode: 'after', target: t, sg, lineY: best.r.bottom + 3 };
+}
+function dragUpdate() {
+  const op = drag.op = dragOp(drag.y);
+  drag.ghost.style.top = (drag.y - drag.gh - 14) + 'px';   // 浮在手指上方，不擋住落點線
+  app.querySelectorAll('.droptarget').forEach(e => e.classList.remove('droptarget'));
+  const name = session.entries[drag.from].name;
+  let hint = '拖到想放的位置';
+  if (op && op.mode === 'merge') {
+    op.el.classList.add('droptarget');
+    drag.line.style.display = 'none';
+    const tsg = session.entries[op.target].sg;
+    hint = tsg ? `放開 → 加入超級組 ${tsg}` : `放開 → 與「${session.entries[op.target].name}」組成超級組`;
+  } else if (op) {
+    drag.line.style.display = 'block';
+    drag.line.style.top = op.lineY + 'px';
+    drag.line.classList.toggle('insg', !!op.sg);
+    hint = op.sg ? `放開 → 移到這裡（超級組 ${op.sg} 內）` : '放開 → 移到這裡（獨立動作）';
+  }
+  drag.hint.textContent = `${name}｜${hint}`;
+}
+function endDrag(commit) {
+  const { from, op } = drag;
+  cancelAnimationFrame(drag.raf);
+  drag.ghost.remove(); drag.line.remove(); drag.hint.remove();
+  drag = null;
+  app.classList.remove('dragging');
+  suppressClickUntil = Date.now() + 400;
+  if (commit && op) withUndo('已移動', () => moveEntry(session, from, op));
+  else render();
 }
 
 /* ---------- events ---------- */
@@ -658,6 +823,7 @@ function ensureSession() { if (!session) { session = newSession(todayISO(), [], 
 function goto(screen) { session.screen = screen; store.saveSession(session); render(); }
 
 function onClick(ev) {
+  if (actx && actx.state !== 'running') initAudio();   // 每次點擊順手喚醒音效（iOS 從背景回來會 suspend）
   const t = ev.target.closest('[data-act]');
   // HIIT 導引中：點畫面空白處＝暫停／繼續（按鈕除外）
   if (!t && session && session.screen === 'HIIT_RUN' && session.run && session.run.phase !== 'done') {
@@ -705,20 +871,24 @@ function onClick(ev) {
         else toast('超級組最多 3 個動作');
         render(); return;
       } else {
-        if (session.entries.some(e => e.name === name)) session.entries = session.entries.filter(e => e.name !== name);
-        else { const ex = exByName[name]; if (ex) addEntry(session, ex, history, 'u' + (idc++)); }
+        if (session.entries.some(e => e.name === name)) {
+          withUndo(`已移除 ${name}`, () => { session.entries = session.entries.filter(e => e.name !== name); normalizeGroups(session); });
+          return;
+        }
+        const ex = exByName[name]; if (ex) addEntry(session, ex, history, 'u' + (idc++));
       }
       saveSoon(); render(); return;
     }
-    case 'rmEntry': session.entries = session.entries.filter(e => e.name !== t.dataset.name); saveSoon(); render(); return;
+    case 'rmEntry': { const ei = +t.dataset.e; const nm = session.entries[ei].name;
+      withUndo(`已刪除 ${nm}`, () => { session.entries.splice(ei, 1); normalizeGroups(session); }); return; }
     case 'rmCardio': session.cardio.splice(+t.dataset.c, 1); saveSoon(); render(); return;
     case 'toLog': goto('LOG'); return;
     case 'toPick': search = ''; goto('PICK'); return;
     case 'toReview': goto('REVIEW'); return;
     case 'toExport': goto('EXPORT'); return;
-    case 'addSet': addSet(entryOf(t)); session.restEndAt = Date.now() + (session.restSeconds || 90) * 1000; saveSoon(); render(); return;
-    case 'addSetGroup': addSetToGroup(session, +t.dataset.e); session.restEndAt = Date.now() + (session.restSeconds || 90) * 1000; saveSoon(); render(); return;
-    case 'sgToggle': toggleSupersetWithPrev(session, +t.dataset.e); saveSoon(); render(); return;
+    case 'addSet': addSet(entryOf(t)); startRest(); saveSoon(); render(); return;
+    case 'addSetGroup': addSetToGroup(session, +t.dataset.e); startRest(); saveSoon(); render(); return;
+    case 'sgToggle': withUndo('已與上一個動作組成超級組', () => { toggleSupersetWithPrev(session, +t.dataset.e); normalizeGroups(session); }); return;
     case 'sgStart': sgMode = true; sgSel = []; render(); return;
     case 'sgCancel': sgMode = false; sgSel = []; render(); return;
     case 'sgConfirm': {
@@ -731,7 +901,7 @@ function onClick(ev) {
       sgMode = false; sgSel = [];
       store.saveSession(session); goto('LOG'); return;
     }
-    case 'rmSet': removeSet(entryOf(t), +t.dataset.s); saveSoon(); render(); return;
+    case 'rmSet': withUndo('已刪除一組', () => removeSet(entryOf(t), +t.dataset.s)); return;
     case 'w': adjustWeight(setOf(t), parseFloat(t.dataset.d)); saveSoon(); render(); return;
     case 'r': adjustReps(setOf(t), parseInt(t.dataset.d)); saveSoon(); render(); return;
     case 'rest30': if (session.restEndAt) { session.restEndAt += 30000; renderTimer(); } return;
