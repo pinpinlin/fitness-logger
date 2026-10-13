@@ -338,7 +338,7 @@ function renderLog() {
       <button class="tiny ghost" data-act="histOpen">📖 過去紀錄</button></div>
     <p class="sub">${esc(session.date)} · ${esc(partsLabel(derivedParts(session)) || '—')}</p>
     <div id="timer"></div>
-    ${session.entries.length > 1 ? '<p class="muted small draghelp">按住 ⠿（或長按動作名）拖拉：上下排序；拖到別的動作中間＝組成／加入超級組；拖到框外＝脫離</p>' : ''}
+    ${session.entries.length > 1 ? '<p class="muted small draghelp">按住 ⠿ 拖拉：上下排序；拖到別的動作中間＝組成／加入超級組；拖到框外＝脫離</p>' : ''}
     ${liftCards}${hiitCard}${cardioCards}${empty}
     <div class="bottombar">
       <button class="ghost tiny" data-act="addLift">＋重訓</button>
@@ -517,15 +517,72 @@ function finishRun(completed) {
 }
 
 /* 音效 */
-let actx = null;
+// iOS 的坑：切到別的 app／鎖屏再回來，Web Audio 常被系統中斷（有時 state 仍顯示 running 卻無聲），
+// 且重新喚醒必須在使用者觸控當下。所以：
+//  ① 回到前景就把舊 AudioContext 視為作廢，下一次觸控（畫面任何地方）重建；
+//  ② 還沒觸控就時間到 → 改用 <audio> 元素播放。這個元素在先前某次觸控時播過一段無聲音檔「解鎖」，
+//     iOS 允許解鎖過的元素之後自行播放。
+let actx = null, audioStale = false;
+try { if (navigator.audioSession) navigator.audioSession.type = 'ambient'; } catch {}   // 與音樂混音、不打斷 Spotify
 function initAudio() {
   try {
+    if (actx && audioStale) { try { actx.close(); } catch {} actx = null; }
+    audioStale = false;
     actx = actx || new (window.AudioContext || window.webkitAudioContext)();
-    if (actx.state === 'suspended') actx.resume();
+    if (actx.state !== 'running') actx.resume();
   } catch { actx = null; }
+  unlockClip();
 }
+const audioOK = () => !!(actx && !audioStale && actx.state === 'running');
+const wakeAudio = () => { if (!audioOK() || !clipUnlocked) initAudio(); };
+document.addEventListener('touchend', wakeAudio, { capture: true, passive: true });
+document.addEventListener('click', wakeAudio, true);
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'hidden') audioStale = true;
+  else if (actx) { try { actx.resume(); } catch {} }
+});
+
+// 用程式產生 WAV（免另放音檔）：tones = [[頻率, 起點秒, 長度秒], …]
+function wavUrl(tones, total) {
+  const sr = 22050, n = Math.round(sr * total), buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+  const str = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+  str(0, 'RIFF'); v.setUint32(4, 36 + n * 2, true); str(8, 'WAVE'); str(12, 'fmt ');
+  v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+  v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true);
+  str(36, 'data'); v.setUint32(40, n * 2, true);
+  for (let i = 0; i < n; i++) {
+    const t = i / sr; let x = 0;
+    for (const [f, st, d] of tones) if (t >= st && t < st + d) {
+      const k = t - st;
+      x += Math.sin(2 * Math.PI * f * k) * Math.min(1, k / 0.01, (d - k) / 0.03) * 0.5;
+    }
+    v.setInt16(44 + i * 2, Math.max(-1, Math.min(1, x)) * 32767, true);
+  }
+  return URL.createObjectURL(new Blob([buf], { type: 'audio/wav' }));
+}
+let clipEl = null, clipUnlocked = false, clipUrls = null;
+function unlockClip() {
+  if (clipUnlocked) return;
+  try {
+    if (!clipUrls) clipUrls = {
+      silent: wavUrl([], 0.05),
+      tick: wavUrl([[660, 0, 0.08]], 0.12),
+      done: wavUrl([[1050, 0, 0.22], [1050, 0.26, 0.22], [1050, 0.52, 0.22]], 0.8)
+    };
+    clipEl = clipEl || new Audio();
+    clipEl.src = clipUrls.silent;
+    clipUnlocked = true;
+    const pr = clipEl.play();
+    if (pr && pr.catch) pr.catch(() => { clipUnlocked = false; });
+  } catch { clipUnlocked = false; }
+}
+function playClip(kind) {
+  if (!clipEl || !clipUrls) return;
+  try { clipEl.src = clipUrls[kind]; const pr = clipEl.play(); if (pr && pr.catch) pr.catch(() => {}); } catch {}
+}
+
 function beep(freq, dur) {
-  if (!actx) return;
+  if (!audioOK()) { playClip('tick'); return; }
   try {
     const o = actx.createOscillator(), g = actx.createGain();
     o.frequency.value = freq; o.type = 'sine';
@@ -642,23 +699,37 @@ function tick() {
   }
   renderTimer();
 }
+// 計時條的 DOM 只在「無／倒數中／結束」切換時重建一次，之後每 tick 只改數字文字。
+// 原本每 250ms 整條 innerHTML 重建：iOS Safari 看到點擊瞬間有新內容出現，會當成 hover 選單而吞掉這次點擊
+// （＋加一組、±重量次數要點好幾下才有反應）。
 function renderTimer() {
   const el = document.getElementById('timer');
   if (!el || !session) return;
-  if (!session.restEndAt) { el.innerHTML = ''; app.classList.remove('withtimer'); return; }
-  app.classList.add('withtimer');
-  const left = Math.round((session.restEndAt - Date.now()) / 1000);
-  restBeep(left);
-  if (left <= 0) {
-    el.innerHTML = `<div class="timer done"><span class="t" style="color:var(--good)">休息結束</span><span class="spacer"></span>
-      <button class="tiny" data-act="restClear">關閉</button></div>`;
+  if (!session.restEndAt) {
+    if (el._mode) { el.innerHTML = ''; el._mode = null; }
+    if (app.classList.contains('withtimer')) app.classList.remove('withtimer');
     return;
   }
-  const m = Math.floor(left / 60), s = String(left % 60).padStart(2, '0');
-  el.innerHTML = `<div class="timer"><span class="t">${m}:${s}</span>
+  if (!app.classList.contains('withtimer')) app.classList.add('withtimer');
+  const left = Math.round((session.restEndAt - Date.now()) / 1000);
+  restBeep(left);
+  const mode = left <= 0 ? 'done' : 'run';
+  if (el._mode !== mode) {
+    el._mode = mode;
+    el.innerHTML = mode === 'done'
+      ? `<div class="timer"><span class="t" style="color:var(--good)">休息結束</span><span class="spacer"></span>
+      <button class="tiny" data-act="restClear">關閉</button></div>`
+      : `<div class="timer"><span class="t"></span>
     <span class="muted small">組間休息</span><span class="spacer"></span>
     <button class="tiny" data-act="rest30">+30</button>
     <button class="tiny" data-act="restClear">跳過</button></div>`;
+  }
+  if (mode === 'run') {
+    const txt = `${Math.floor(left / 60)}:${String(left % 60).padStart(2, '0')}`;
+    const t = el.querySelector('.t');
+    if (!t.firstChild) t.appendChild(document.createTextNode(""));
+    if (t.firstChild.nodeValue !== txt) t.firstChild.nodeValue = txt;   // 改字不插新節點
+  }
 }
 
 // 組間休息提示音：最後 3 秒短嗶、時間到三聲長嗶＋震動（每次休息只響一輪）
@@ -673,7 +744,8 @@ function restBeep(left) {
   if (left <= 0 && restBeepKey !== key) {
     restBeepKey = key; restTickLeft = null;
     if (left < -5) return;   // app 在背景時就結束了，回來不補響
-    [0, 260, 520].forEach(ms => setTimeout(() => beep(1050, 0.22), ms));
+    if (audioOK()) [0, 260, 520].forEach(ms => setTimeout(() => beep(1050, 0.22), ms));
+    else playClip('done');   // 剛從背景回來、還沒觸控 → 用解鎖過的 <audio> 播
     try { navigator.vibrate && navigator.vibrate([200, 100, 200, 100, 200]); } catch {}
   }
 }
@@ -701,35 +773,24 @@ function withUndo(msg, fn) {
 }
 
 /* ---------- 拖拉排序（記錄頁的重訓動作卡）----------
-   按住 ⠿ 立即拖；或長按動作名那一列 400ms。拖拉時卡片收合成只剩標題，整場一眼看完。
+   只用左側 ⠿ 把手（按住即拖）。拖拉時卡片收合成只剩標題，整場一眼看完。
    放的位置：卡片上緣／下緣＝插在前／後（該卡在超級組內就一起加入）；卡片中段＝與它組成／加入超級組；
    卡片之間的空隙＝獨立動作（在超級組框內的空隙則加入該組）。 */
-let drag = null, press = null, suppressClickUntil = 0;
+let drag = null, suppressClickUntil = 0;
 app.addEventListener('pointerdown', ev => {
   if (!session || session.screen !== 'LOG' || drag || pendingResume || histScreen) return;
-  const card = ev.target.closest('.card[data-ei]'); if (!card) return;
-  const grip = ev.target.closest('[data-grip]');
-  if (!grip && (!ev.target.closest('.cardhead') || ev.target.closest('button, input'))) return;
-  const from = +card.dataset.ei;
-  if (grip) { ev.preventDefault(); beginDrag(from, ev.clientY); return; }
-  press = { x: ev.clientX, y: ev.clientY, t: setTimeout(() => { const y = press.y; press = null; beginDrag(from, y); }, 400) };
+  const grip = ev.target.closest('[data-grip]'); if (!grip) return;
+  const card = grip.closest('.card[data-ei]'); if (!card) return;
+  ev.preventDefault(); beginDrag(+card.dataset.ei, ev.clientY);
 });
-window.addEventListener('pointermove', ev => {
-  if (press && Math.hypot(ev.clientX - press.x, ev.clientY - press.y) > 8) { clearTimeout(press.t); press = null; }
-  if (drag) { ev.preventDefault(); drag.y = ev.clientY; dragUpdate(); }
-}, { passive: false });
-window.addEventListener('pointerup', () => endPress(true));
-window.addEventListener('pointercancel', () => endPress(false));
+window.addEventListener('pointermove', ev => { if (drag) { ev.preventDefault(); drag.y = ev.clientY; dragUpdate(); } }, { passive: false });
+window.addEventListener('pointerup', () => { if (drag) endDrag(true); });
+window.addEventListener('pointercancel', () => { if (drag) endDrag(false); });
 // iOS：拖拉中擋掉捲動（否則系統接手變成捲頁並送 pointercancel）
 document.addEventListener('touchmove', ev => { if (drag) ev.preventDefault(); }, { passive: false });
 // 拖完放手時，手指下的按鈕（如另一張卡的 ✕）不可被觸發
 window.addEventListener('click', ev => { if (Date.now() < suppressClickUntil) { ev.stopPropagation(); ev.preventDefault(); } }, true);
-document.addEventListener('contextmenu', ev => { if (drag || press) ev.preventDefault(); });
-
-function endPress(commit) {
-  if (press) { clearTimeout(press.t); press = null; }
-  if (drag) endDrag(commit);
-}
+document.addEventListener('contextmenu', ev => { if (drag) ev.preventDefault(); });
 function beginDrag(from, y) {
   const card = app.querySelector(`.card[data-ei="${from}"]`); if (!card) return;
   drag = { from, y, op: null, raf: 0 };
@@ -823,7 +884,6 @@ function ensureSession() { if (!session) { session = newSession(todayISO(), [], 
 function goto(screen) { session.screen = screen; store.saveSession(session); render(); }
 
 function onClick(ev) {
-  if (actx && actx.state !== 'running') initAudio();   // 每次點擊順手喚醒音效（iOS 從背景回來會 suspend）
   const t = ev.target.closest('[data-act]');
   // HIIT 導引中：點畫面空白處＝暫停／繼續（按鈕除外）
   if (!t && session && session.screen === 'HIIT_RUN' && session.run && session.run.phase !== 'done') {

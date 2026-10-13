@@ -135,7 +135,6 @@ body:has(#app.run-round) { background: #0f1e33; }
 .assist { color: var(--warn); font-size: 11px; }
 
 /* 拖拉排序 */
-.cardhead { -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .grip { color: var(--muted); font-size: 18px; line-height: 1; padding: 6px 6px 6px 0; margin-left: -4px;
   touch-action: none; cursor: grab; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
 .draghelp { margin: 2px 2px 4px; font-size: 11.5px; line-height: 1.45; }
@@ -163,7 +162,3 @@ body:has(#app.run-round) { background: #0f1e33; }
   box-shadow: 0 8px 22px rgba(0,0,0,.6); font-size: 14px; }
 .undo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .undo button { background: var(--accent); border-color: var(--accent); color: #0b1622; font-weight: 600; border-radius: 999px; }
-
-/* 休息結束：整條閃綠 */
-.timer.done { background: #123d2a; border-color: var(--good); animation: restdone 1s ease-in-out 3; }
-@keyframes restdone { 50% { background: #1f6b47; } }
