@@ -127,7 +127,7 @@ async function probeSW() {
 // 版本列（開場與歷史頁底部）
 function versionLine() {
   const bits = [];
-  const v = (verInfo && verInfo.sw) || swVer;
+  const v = swVer || (verInfo && verInfo.sw);   // 優先顯示手機上實際生效的程式版本（資料是 network-first，可能比程式新）
   if (v) bits.push(v);
   if (verInfo) bits.push("資料 " + (verInfo.latestLog || "—") + "（" + verInfo.sessions + " 場／" + verInfo.exercises + " 動作）");
   if (verInfo && verInfo.generated) bits.push("更新 " + verInfo.generated);
