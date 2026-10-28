@@ -3,9 +3,14 @@ import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, comm
   toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate,
   moveEntry, normalizeGroups, applyRenames } from './lib/session.js';
 import * as store from './lib/storage.js';
+import { mergeExercises, reconcileCustoms, bumpCustomBest } from './lib/custom.js';
 
 const app = document.getElementById('app');
-let exercises = [], byPart = {}, exByName = {};
+let exercises = [];                // 正式動作庫（exercises.json）；新增表單的欄位選項只能吃這份
+let customs = {};                  // 手機新增、尚未入庫的動作（Record<name, Custom>）
+let allEx = [];                    // 合併後清單＝正式庫＋customs；選動作池／byPart／exByName 都吃這份
+let byPart = {}, exByName = {};
+let officialRenames = {};          // renames.json（舊名→正式名），boot 時載入
 let blocks = { summary: '', hiitSummary: '', cardioSummary: '' };
 let pastLogs = [];          // history.json：過去場次（新→舊）
 let histOpen = null;        // 歷史頁展開中的場次索引
@@ -20,6 +25,15 @@ let search = '', hiitSearch = '';
 let sgMode = false, sgSel = [];   // 選動作頁的超級組圈選模式
 let idc = 1;
 let pendingResume = false;
+
+// 依 正式庫＋customs 重建合併清單與索引；新增／刪除／入庫對帳新動作後呼叫
+function rebuildIndex() {
+  allEx = mergeExercises(exercises, customs);
+  byPart = {}; for (const p of PART_ORDER) byPart[p] = [];
+  exByName = {};
+  for (const e of allEx) { (byPart[e.部位] || (byPart[e.部位] = [])).push(e); exByName[e.name] = e; }
+}
+const saveCustoms = () => store.saveCustoms(customs);
 
 // 動作改名對照（舊名→新名）：本機 history 與未完成場次在開 app 時自動換名
 const RENAMES = {
@@ -40,23 +54,21 @@ const num = v => (v === null || v === undefined || v === '') ? '' : v;
 
 async function boot() {
   try {
-    const [ex, sb, hb, cb, hist, ver] = await Promise.all([
+    const [ex, sb, hb, cb, hist, ver, renames] = await Promise.all([
       fetch('exercises.json').then(r => r.json()),
       fetch('summary-block.txt').then(r => r.text()),
       fetch('summary-hiit-block.txt').then(r => r.text()).catch(() => ''),
       fetch('summary-cardio-block.txt').then(r => r.text()).catch(() => ''),
       fetch('history.json').then(r => r.json()).catch(() => []),
-      fetch('version.json').then(r => r.json()).catch(() => null)
+      fetch('version.json').then(r => r.json()).catch(() => null),
+      fetch('renames.json').then(r => r.json()).catch(() => ({}))   // 舊版部署／離線抓不到 → 空對照
     ]);
+    officialRenames = (renames && typeof renames === 'object' && !Array.isArray(renames)) ? renames : {};
     exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb }; pastLogs = hist; verInfo = ver;
   } catch (e) {
     app.innerHTML = `<div class="card">載入動作資料失敗，請確認連線後重開。<br><span class="muted small">${esc(e.message)}</span></div>`;
     return;
   }
-  byPart = {}; for (const p of PART_ORDER) byPart[p] = [];
-  exByName = {};
-  for (const e of exercises) { (byPart[e.部位] || (byPart[e.部位] = [])).push(e); exByName[e.name] = e; }
-
   history = store.loadHistory();
   prefs = store.loadPrefs();
   session = store.loadSession();
@@ -64,7 +76,15 @@ async function boot() {
     migrate(session);
     if (restampDate(session, todayISO())) store.saveSession(session);
   }
-  if (applyRenames(session, history, RENAMES)) { store.saveHistory(history); if (session) store.saveSession(session); }
+  // 新動作對帳：已入庫同名 → 從 customs 移除；renames.json 有改名 → 一併換名
+  const stored = store.loadCustoms();
+  const rec = reconcileCustoms(stored, exercises, officialRenames);
+  customs = rec.customs;
+  if (Object.keys(customs).length !== Object.keys(stored).length) saveCustoms();
+  if (applyRenames(session, history, { ...RENAMES, ...officialRenames, ...rec.renameMap })) {
+    store.saveHistory(history); if (session) store.saveSession(session);
+  }
+  rebuildIndex();
   // entry id 接續既有最大號（重開 app 後 idc 從 1 起算會撞號）
   for (const e of (session && session.entries) || []) { const n = parseInt(String(e.id || '').slice(1)); if (n >= idc) idc = n + 1; }
   pendingResume = !!(session && hasContent(session));
@@ -88,9 +108,9 @@ const curH = () => (session && session.hiits) ? session.hiits[session.hiitIdx] :
 const hGroups = s => (s.hiits || []).filter(g => (g.items || []).length);
 const hasContent = s => (s.entries || []).length || hGroups(s).length || (s.cardio || []).length;
 const typeOf = e => (e && e.型態) ? e.型態 : ['重訓'];
-const poolOf = t => exercises.filter(e => typeOf(e).includes(t));
+const poolOf = t => allEx.filter(e => typeOf(e).includes(t));
 // 重訓模式的動作池：重訓 ＋ HIIT 動作（HIIT 動作也可能單獨做，用組數記錄，如開合跳 100 下）；排除純有氧
-const liftPool = () => exercises.filter(e => { const t = typeOf(e); return t.includes('重訓') || t.includes('HIIT'); });
+const liftPool = () => allEx.filter(e => { const t = typeOf(e); return t.includes('重訓') || t.includes('HIIT'); });
 
 // 檔名/frontmatter 用的部位＝重訓勾選 ∪ HIIT 動作 ∪ 有氧項目 的部位
 function derivedParts(s) {
@@ -668,7 +688,7 @@ function renderReview() {
 function renderExport() {
   app.className = 'hasbar';
   const s = exportSession();
-  const md = buildMd(s, blocks);
+  const md = buildMd(s, blocks, customs);
   const name = fileName(s);
   app.innerHTML = `
     <h1>存檔</h1>
@@ -999,7 +1019,7 @@ function onClick(ev) {
     case 'histBack': histScreen = false; render(); return;
     case 'histToggle': { const i = +t.dataset.i; histOpen = (histOpen === i) ? null : i; render(); return; }
 
-    case 'copy': navigator.clipboard?.writeText(buildMd(exportSession(), blocks)); toast('已複製全文'); return;
+    case 'copy': navigator.clipboard?.writeText(buildMd(exportSession(), blocks, customs)); toast('已複製全文'); return;
     case 'save': saveMd(); return;
   }
 }
@@ -1066,7 +1086,7 @@ function toast(msg) {
 
 async function saveMd() {
   const s = exportSession();
-  const text = buildMd(s, blocks);              // 同步先算，保住 user-activation
+  const text = buildMd(s, blocks, customs);              // 同步先算，保住 user-activation
   const name = fileName(s);
   const file = new File([text], name, { type: 'text/markdown' });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -1079,6 +1099,7 @@ async function saveMd() {
 
 function afterSave() {
   commitHistory(session, history); store.saveHistory(history);
+  if (bumpCustomBest(customs, session)) saveCustoms();
   store.clearSession();
   toast('已存檔，可開始新的一場');
   session = null; setupParts = [];

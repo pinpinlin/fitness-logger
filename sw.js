@@ -4,11 +4,12 @@
 const CACHE = 'fl-v43';
 const DATA = [
   'exercises.json', 'history.json', 'version.json',
-  'summary-block.txt', 'summary-hiit-block.txt', 'summary-cardio-block.txt'
+  'summary-block.txt', 'summary-hiit-block.txt', 'summary-cardio-block.txt',
+  'renames.json'
 ];
 const SHELL = [
   './', './index.html', './styles.css', './app.js',
-  './lib/format.js', './lib/session.js', './lib/storage.js',
+  './lib/format.js', './lib/session.js', './lib/storage.js', './lib/custom.js',
   './manifest.webmanifest',
   ...DATA.map(f => './' + f),
   './icons/icon-192.png', './icons/icon-512-maskable.png', './icons/apple-touch-icon-180.png'
