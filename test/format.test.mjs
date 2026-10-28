@@ -7,7 +7,7 @@ import {
   exerciseLine, frontmatterParts, buildMd,
   hiitTotalSeconds, fmtDuration, hiitLine, cardioLine, sessionTypes
 } from '../lib/format.js';
-import { makeCustom } from '../lib/custom.js';
+import { makeCustom, sanitizeField } from '../lib/custom.js';
 
 const rd = f => readFileSync(fileURLToPath(new URL('../' + f, import.meta.url)), 'utf8');
 const summaryBlock = rd('summary-block.txt');
@@ -292,4 +292,14 @@ test('hiitLine／cardioLine：新動作同樣加標記', () => {
   assert.equal(hiitLine({ name: 'H', doneRounds: 3, load: null }, null, c), '[[H]] (型態:: HIIT) (完成:: 3輪) (新動作:: 部位=核心; 型態=HIIT)');
   const k = makeCustom({ name: 'K', 部位: '腿', 型態: ['有氧'] });
   assert.equal(cardioLine({ name: 'K', minutes: 20 }, k), '[[K]] (型態:: 有氧) (時間:: 20分) (新動作:: 部位=腿; 型態=有氧)');
+});
+
+test('新動作標記：手打欄位含 ; = ( ) 清理後，標記仍是乾淨的 key=value 對', () => {
+  const c = makeCustom({ name: 'N', 部位: '腿', 型態: ['重訓', 'HIIT'],
+    區域: sanitizeField('臀(上)'), 動作型: sanitizeField('臀推;單腿'), 器材: sanitizeField('史密斯=機') });
+  const line = exerciseLine({ name: 'N', 型式: '半機械式', sets: [{ weight: 40, reps: 8 }] }, c);
+  const tag = line.match(/\(新動作:: (.*)\)$/)[1];
+  assert.deepEqual(tag.split('; ').map(p => p.split('=')), [
+    ['部位', '腿'], ['型態', '重訓、HIIT'], ['區域', '臀（上）'], ['動作型', '臀推；單腿'], ['器材', '史密斯＝機']
+  ]);
 });

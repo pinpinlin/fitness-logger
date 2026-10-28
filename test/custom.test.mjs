@@ -1,9 +1,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
-  sanitizeName, guessXingshi, fieldOptions, findExisting, makeCustom,
+  sanitizeName, sanitizeField, guessXingshi, fieldOptions, findExisting, makeCustom,
   mergeExercises, reconcileCustoms, renameCustom, bumpCustomBest, newExerciseTag
 } from '../lib/custom.js';
+
+test('sanitizeField：名稱清理之外，標記語法字 ; = ( ) 換全形', () => {
+  assert.equal(sanitizeField('臀(推);a=b'), '臀（推）；a＝b');
+  assert.equal(sanitizeField('  史密斯  機 / x '), '史密斯 機 ／ x');
+  assert.equal(sanitizeField(''), '');
+});
 
 test('sanitizeName：去頭尾空白、合併空白、禁字換全形', () => {
   assert.equal(sanitizeName('  單腿  臀推 史密斯 '), '單腿 臀推 史密斯');

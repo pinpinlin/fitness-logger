@@ -3,7 +3,7 @@ import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, comm
   toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate,
   moveEntry, normalizeGroups, applyRenames } from './lib/session.js';
 import * as store from './lib/storage.js';
-import { mergeExercises, reconcileCustoms, bumpCustomBest, sanitizeName, guessXingshi, fieldOptions,
+import { mergeExercises, reconcileCustoms, bumpCustomBest, sanitizeName, sanitizeField, guessXingshi, fieldOptions,
   findExisting, makeCustom, renameCustom } from './lib/custom.js';
 
 const app = document.getElementById('app');
@@ -1154,7 +1154,7 @@ function submitForm() {
   const f = addForm; if (!formOk()) return;
   const name = sanitizeName(f.name);
   const fields = { 部位: f.部位, 型態: TYPES.filter(t => f.型態.includes(t)),
-    區域: sanitizeName(f.區域), 動作型: sanitizeName(f.動作型), 器材: sanitizeName(f.器材), 型式: f.型式 };
+    區域: sanitizeField(f.區域), 動作型: sanitizeField(f.動作型), 器材: sanitizeField(f.器材), 型式: f.型式 };
   if (f.mode === 'new') {
     // 與正式庫（或既有新動作）同名 → 不新建，直接選那個
     const ex = findExisting(exercises, name) || (Object.hasOwn(customs, name) ? customs[name] : null);
