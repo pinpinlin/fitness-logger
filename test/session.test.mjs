@@ -230,3 +230,11 @@ test('applyRenames：HIIT 項目與有氧也跟著換名', () => {
   assert.deepEqual(s.cardio.map(c => c.name), ['新', 'Z']);
   assert.equal(applyRenames(s, {}, { 舊: '新' }), false, '第二次無改動');
 });
+
+test('applyRenames：恆等對照（X→X）不動 history 與場次名稱', () => {
+  const s = mkSession(['X']);
+  const h = { X: { sets: [{ weight: 10, reps: 12, rpe: null }] } };
+  assert.equal(applyRenames(s, h, { X: 'X' }), false);
+  assert.ok(h.X, 'history.X 保留');
+  assert.equal(s.entries[0].name, 'X');
+});

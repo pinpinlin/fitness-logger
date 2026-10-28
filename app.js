@@ -67,7 +67,8 @@ async function boot() {
       fetch('version.json').then(r => r.json()).catch(() => null),
       fetch('renames.json').then(r => r.json()).catch(() => ({}))   // 舊版部署／離線抓不到 → 空對照
     ]);
-    officialRenames = (renames && typeof renames === 'object' && !Array.isArray(renames)) ? renames : {};
+    officialRenames = (renames && typeof renames === 'object' && !Array.isArray(renames))
+      ? Object.fromEntries(Object.entries(renames).filter(([o, n]) => o !== n)) : {};   // 去掉恆等對照
     exercises = ex; blocks = { summary: sb, hiitSummary: hb, cardioSummary: cb }; pastLogs = hist; verInfo = ver;
   } catch (e) {
     app.innerHTML = `<div class="card">載入動作資料失敗，請確認連線後重開。<br><span class="muted small">${esc(e.message)}</span></div>`;
@@ -784,6 +785,8 @@ function restBeep(left) {
 
 /* ---------- 復原（刪動作／刪組／組超級組／拖拉／刪新動作都可撤回一步）---------- */
 let undoT = null;
+// 收掉待復原列：其快照一旦遇到改名／新增就不能再還原（會讓 customs／session 與 history 分家）
+function dismissUndo() { clearTimeout(undoT); document.querySelector('.undo')?.remove(); }
 function withUndo(msg, fn) {
   const snap = JSON.stringify(session), csnap = JSON.stringify(customs);
   fn();
@@ -1141,6 +1144,7 @@ function setFormPart(p) {
 function quickAdd() {
   const name = sanitizeName(curTerm());
   if (!name) return;
+  dismissUndo();
   const 部位 = (session.parts || [])[0];
   if (!部位) { openAddForm(name); renderSheet(); return; }
   const ex = findExisting(exercises, name);
@@ -1152,6 +1156,7 @@ function quickAdd() {
 
 function submitForm() {
   const f = addForm; if (!formOk()) return;
+  dismissUndo();
   const name = sanitizeName(f.name);
   const fields = { 部位: f.部位, 型態: TYPES.filter(t => f.型態.includes(t)),
     區域: sanitizeField(f.區域), 動作型: sanitizeField(f.動作型), 器材: sanitizeField(f.器材), 型式: f.型式 };
