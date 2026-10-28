@@ -220,3 +220,13 @@ test('applyRenames：history 與未完成場次一起換名', () => {
   assert.deepEqual(Object.keys(h), ['新']);
   assert.equal(applyRenames(s, h, { 舊: '新' }), false, '第二次無改動');
 });
+
+test('applyRenames：HIIT 項目與有氧也跟著換名', () => {
+  const s = mkSession(['X']);
+  s.hiits = [{ tag: 'A', items: [{ name: '舊', load: null }, { name: 'Y' }, { name: '舊', load: 4 }] }];
+  s.cardio = [{ name: '舊', minutes: 10 }, { name: 'Z' }];
+  assert.equal(applyRenames(s, {}, { 舊: '新' }), true);
+  assert.deepEqual(s.hiits[0].items.map(i => i.name), ['新', 'Y', '新']);
+  assert.deepEqual(s.cardio.map(c => c.name), ['新', 'Z']);
+  assert.equal(applyRenames(s, {}, { 舊: '新' }), false, '第二次無改動');
+});

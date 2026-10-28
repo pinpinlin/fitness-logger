@@ -3,7 +3,8 @@ import { newSession, addEntry, addSet, removeSet, adjustWeight, adjustReps, comm
   toggleSupersetWithPrev, addSetToGroup, nextGroupTag, restampDate,
   moveEntry, normalizeGroups, applyRenames } from './lib/session.js';
 import * as store from './lib/storage.js';
-import { mergeExercises, reconcileCustoms, bumpCustomBest } from './lib/custom.js';
+import { mergeExercises, reconcileCustoms, bumpCustomBest, sanitizeName, guessXingshi, fieldOptions,
+  findExisting, makeCustom, renameCustom } from './lib/custom.js';
 
 const app = document.getElementById('app');
 let exercises = [];                // 正式動作庫（exercises.json）；新增表單的欄位選項只能吃這份
@@ -21,7 +22,10 @@ let swUpdate = false;    // 有新版 SW 等待啟用     // 歷史頁開啟中�
 let history = {}, prefs = {};
 let session = null;
 let setupParts = [];
-let search = '', hiitSearch = '';
+let search = '', hiitSearch = '', cardioSearch = '';
+// 新增／編輯動作的底部表單（null＝未開）：疊在目前畫面上，不換 session.screen
+// {mode:'new'|'edit', oldName?, name, 部位, 型態[], 區域, 動作型, 器材, 型式, 型式手動, other:{區域,動作型,器材}}
+let addForm = null;
 let sgMode = false, sgSel = [];   // 選動作頁的超級組圈選模式
 let idc = 1;
 let pendingResume = false;
@@ -157,7 +161,8 @@ function versionLine() {
 }
 
 /* ---------- render ---------- */
-function render() {
+function render() { renderScreen(); renderSheet(); }
+function renderScreen() {
   if (histScreen) return renderHistory();
   if (pendingResume) return renderResume();
   if (!session) return renderSetup();
@@ -216,22 +221,13 @@ function renderParts() {
 
 function renderPick() {
   app.className = 'hasbar';
-  const term = search.trim();
-  const picked = sgMode ? new Set(sgSel) : new Set(session.entries.map(e => e.name));
-  const pool = liftPool();
-  let body = '';
-  if (term) {
-    body = `<div class="sec-title">搜尋結果</div>${exRows(pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), picked)}`;
-  } else {
-    for (const p of session.parts) body += `<div class="sec-title">${p}</div>${exRows(pool.filter(e => e.部位 === p), picked)}`;
-  }
   app.innerHTML = `
     <h1>選動作</h1>
     <p class="sub">${sgMode
       ? `🔗 圈選模式：依序點 2~3 個動作組成超級組（已選 ${sgSel.length}）`
       : `${esc(partsLabel(session.parts))} · 點選加入`}</p>
-    <input data-inp="search" placeholder="搜尋動作名／區域／動作型…" value="${esc(search)}">
-    <div id="picklist">${body}</div>
+    ${searchRow('search', '搜尋動作名／區域／動作型…', search)}
+    <div id="picklist">${listBody('picklist')}</div>
     <div class="bottombar">
       ${sgMode
         ? `<button class="ghost" data-act="sgCancel">取消</button>
@@ -248,9 +244,38 @@ function exRows(list, picked) {
   return list.map(e => {
     const n = isMap ? (picked.get(e.name) || 0) : (picked.has(e.name) ? 1 : 0);
     const badge = n ? `<span class="meta">${isMap ? '×' + n : '✓'}</span>` : (isMap ? '<span class="meta">＋</span>' : '');
+    // 新動作：待確認標記＋✎（✎ 自帶 data-act，closest 先抓到它，不會觸發整列的 pickEx）
     return `<div class="ex-item ${n ? 'on' : ''}" data-act="pickEx" data-name="${esc(e.name)}">
-      <span>${esc(e.name)}</span><span class="spacer"></span>
-      <span class="meta">${esc(e.區域 || e.型式)}</span>${badge}</div>`;
+      <span>${esc(e.name)}</span>${e.custom ? '<span class="new">待確認</span>' : ''}<span class="spacer"></span>
+      <span class="meta">${esc(e.區域 || e.型式)}</span>${badge}${e.custom
+        ? `<button class="tiny ghost editbtn" data-act="editCustom" data-name="${esc(e.name)}">✎</button>` : ''}</div>`;
+  }).join('');
+}
+// 搜尋框＋常駐「＋ 新增」鈕（開完整表單）
+const searchRow = (inp, ph, val) => `<div class="row searchrow">
+    <input data-inp="${inp}" placeholder="${ph}" value="${esc(val)}">
+    <button class="tiny" data-act="addExForm">＋ 新增</button></div>`;
+// 搜尋字清理後非空、且不是既有動作（正式庫或新動作）→ 清單底部出現兩顆新增鈕
+function addRows(term) {
+  const nm = sanitizeName(term);
+  if (!nm || findExisting(exercises, nm) || Object.hasOwn(customs, nm)) return '';
+  return `<div class="ex-item addrow" data-act="addQuick"><span>＋ 新增「<b>${esc(nm)}</b>」</span><span class="spacer"></span><span class="meta">快速</span></div>
+    <div class="ex-item addrow full" data-act="addExForm"><span>⚙ 新增並填欄位…</span><span class="spacer"></span><span class="meta">完整</span></div>`;
+}
+// 三個選動作頁的清單本體（搜尋結果＋新增鈕／依部位分區）；整頁 render 與 updatePickList 共用
+function listBody(id) {
+  const L = {
+    picklist: () => ({ term: search, pool: liftPool(), parts: session.parts, showEmpty: true,
+      picked: sgMode ? new Set(sgSel) : new Set(session.entries.map(e => e.name)) }),
+    hiitlist: () => ({ term: hiitSearch, pool: poolOf('HIIT'), parts: PART_ORDER, picked: hiitCounts() }),
+    cardiolist: () => ({ term: cardioSearch, pool: poolOf('有氧'), parts: null, picked: new Set((session.cardio || []).map(c => c.name)) })
+  }[id]();
+  const term = L.term.trim();
+  if (term) return `<div class="sec-title">搜尋結果</div>${exRows(L.pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), L.picked)}${addRows(term)}`;
+  if (!L.parts) return exRows(L.pool, L.picked);
+  return L.parts.map(p => {
+    const g = L.pool.filter(e => e.部位 === p);
+    return (g.length || L.showEmpty) ? `<div class="sec-title">${p}</div>${exRows(g, L.picked)}` : '';
   }).join('');
 }
 
@@ -397,18 +422,6 @@ const hiitCounts = () => {
 function renderHiitSetup() {
   app.className = 'hasbar';
   const h = curH();
-  const picked = hiitCounts();
-  const term = hiitSearch.trim();
-  const pool = poolOf('HIIT');
-  let list = '';
-  if (term) {
-    list = `<div class="sec-title">搜尋結果</div>${exRows(pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), picked)}`;
-  } else {
-    for (const p of PART_ORDER) {
-      const g = pool.filter(e => e.部位 === p);
-      if (g.length) list += `<div class="sec-title">${p}</div>${exRows(g, picked)}`;
-    }
-  }
   const p = h.params;
   const total = h.items.length ? fmtDuration(hiitTotalSeconds(p, h.items.length)) : '—';
   const paramRow = (label, key, step, unit) => `<div class="row srow">
@@ -436,8 +449,8 @@ function renderHiitSetup() {
           <button class="step" data-act="hiitLoad" data-g="${session.hiitIdx}" data-i="${i}" data-d="2">＋</button>
           <span class="unit">kg</span></div>
       </div>`).join('') : ''}
-    <input data-inp="hiitSearch" placeholder="搜尋 HIIT 動作…" value="${esc(hiitSearch)}" style="margin-top:10px">
-    <div id="hiitlist">${list}</div>
+    <div style="margin-top:10px">${searchRow('hiitSearch', '搜尋 HIIT 動作…', hiitSearch)}</div>
+    <div id="hiitlist">${listBody('hiitlist')}</div>
     <div class="bottombar">
       <button class="ghost" data-act="toHub">← 返回</button>
       <button class="primary" data-act="hiitRun" ${h.items.length ? '' : 'disabled'}>▶ 開始導引</button>
@@ -629,12 +642,11 @@ document.addEventListener('visibilitychange', () => {
 /* ---------- 有氧 ---------- */
 function renderCardioPick() {
   app.className = 'hasbar';
-  const picked = new Set((session.cardio || []).map(c => c.name));
-  const pool = poolOf('有氧');
   app.innerHTML = `
     <h1>選有氧項目</h1>
     <p class="sub">點選加入本場</p>
-    ${exRows(pool, picked)}
+    ${searchRow('cardioSearch', '搜尋有氧項目…', cardioSearch)}
+    <div id="cardiolist">${listBody('cardiolist')}</div>
     <div class="bottombar">
       <button class="ghost" data-act="toHub">← 返回</button>
       <button class="primary" data-act="toLog">去記錄（${(session.cardio || []).length}）</button>
@@ -770,24 +782,28 @@ function restBeep(left) {
   }
 }
 
-/* ---------- 復原（刪動作／刪組／組超級組／拖拉都可撤回一步）---------- */
+/* ---------- 復原（刪動作／刪組／組超級組／拖拉／刪新動作都可撤回一步）---------- */
 let undoT = null;
 function withUndo(msg, fn) {
-  const snap = JSON.stringify(session);
+  const snap = JSON.stringify(session), csnap = JSON.stringify(customs);
   fn();
-  if (JSON.stringify(session) === snap) { render(); return; }   // 沒變就不提示
-  store.saveSession(session); render();
+  const cChanged = JSON.stringify(customs) !== csnap;
+  if (JSON.stringify(session) === snap && !cChanged) { render(); return; }   // 沒變就不提示
+  store.saveSession(session);
+  if (cChanged) { saveCustoms(); rebuildIndex(); }
+  render();
   let el = document.querySelector('.undo');
   if (!el) {
     el = document.createElement('div'); el.className = 'undo';
     el.addEventListener('click', ev => {
       if (!ev.target.closest('button') || !el._snap) return;
       session = JSON.parse(el._snap); el._snap = null;
+      if (el._csnap !== JSON.stringify(customs)) { customs = JSON.parse(el._csnap); saveCustoms(); rebuildIndex(); }
       store.saveSession(session); el.remove(); render();
     });
     document.body.appendChild(el);
   }
-  el._snap = snap;
+  el._snap = snap; el._csnap = csnap;
   el.innerHTML = `<span>${esc(msg)}</span><button class="tiny">復原</button>`;
   clearTimeout(undoT); undoT = setTimeout(() => el.remove(), 8000);
 }
@@ -920,7 +936,7 @@ function onClick(ev) {
       const m = t.dataset.m;
       if (m === '重訓') { setupParts = [...(session.parts || [])]; goto('PARTS'); }
       else if (m === 'HIIT') { ensureHiit(); goto('HIIT_SETUP'); }
-      else { goto('CARDIO_PICK'); }
+      else { cardioSearch = ''; goto('CARDIO_PICK'); }
       return;
     }
     case 'togglePart': {
@@ -933,32 +949,47 @@ function onClick(ev) {
     case 'toHub': goto(hasContent(session) ? 'LOG' : 'SETUP'); return;
     case 'addLift': setupParts = [...(session.parts || [])]; goto(session.parts && session.parts.length ? 'PICK' : 'PARTS'); return;
     case 'addHiit': ensureHiit(); goto('HIIT_SETUP'); return;
-    case 'addCardio': goto('CARDIO_PICK'); return;
+    case 'addCardio': cardioSearch = ''; goto('CARDIO_PICK'); return;
 
     case 'pickEx': {
       const name = t.dataset.name;
-      if (session.screen === 'HIIT_SETUP') {
-        // 可重複：每點一次就再加一個（不同負重用），移除靠上方列表的 ✕
-        curH().items.push({ name, doneRounds: 0, load: null });
-      } else if (session.screen === 'CARDIO_PICK') {
+      // 已選的再點＝移除（HIIT 可重複加入，不移除；移除靠上方列表的 ✕）
+      if (session.screen === 'CARDIO_PICK') {
         const i = session.cardio.findIndex(c => c.name === name);
-        if (i >= 0) session.cardio.splice(i, 1);
-        else session.cardio.push({ name, minutes: null, km: null, intensity: '' });
-      } else if (sgMode) {
-        const i = sgSel.indexOf(name);
-        if (i >= 0) sgSel.splice(i, 1);
-        else if (sgSel.length < 3) sgSel.push(name);
-        else toast('超級組最多 3 個動作');
-        render(); return;
-      } else {
+        if (i >= 0) { session.cardio.splice(i, 1); saveSoon(); render(); return; }
+      } else if (session.screen !== 'HIIT_SETUP') {
+        if (sgMode) {
+          const i = sgSel.indexOf(name);
+          if (i >= 0) sgSel.splice(i, 1);
+          else if (sgSel.length < 3) sgSel.push(name);
+          else toast('超級組最多 3 個動作');
+          render(); return;
+        }
         if (session.entries.some(e => e.name === name)) {
           withUndo(`已移除 ${name}`, () => { session.entries = session.entries.filter(e => e.name !== name); normalizeGroups(session); });
           return;
         }
-        const ex = exByName[name]; if (ex) addEntry(session, ex, history, 'u' + (idc++));
       }
+      addPicked(name);
       saveSoon(); render(); return;
     }
+
+    /* 新增／編輯動作 */
+    case 'addExForm': openAddForm(curTerm()); renderSheet(); return;
+    case 'addQuick': quickAdd(); return;
+    case 'editCustom': { const n = t.dataset.name; if (Object.hasOwn(customs, n)) { openEditForm(customs[n]); renderSheet(); } return; }
+    case 'addCancel': addForm = null; renderSheet(); return;
+    case 'addPart': setFormPart(t.dataset.v); renderSheet(); return;
+    case 'addType': { const v = t.dataset.v, a = addForm.型態; addForm.型態 = a.includes(v) ? a.filter(x => x !== v) : [...a, v]; renderSheet(); return; }
+    case 'addField': { const k = t.dataset.f, v = t.dataset.v; addForm[k] = addForm[k] === v ? '' : v; addForm.other[k] = false; autoXs(); renderSheet(); return; }
+    case 'addOther': {
+      const k = t.dataset.f; addForm.other[k] = !addForm.other[k]; addForm[k] = ''; autoXs(); renderSheet();
+      if (addForm.other[k]) { const inp = document.querySelector(`#addsheet [data-inp="addOther"][data-f="${k}"]`); if (inp) inp.focus(); }
+      return;
+    }
+    case 'addXs': { const i = XS_CYCLE.indexOf(addForm.型式); addForm.型式 = XS_CYCLE[(i + 1) % XS_CYCLE.length]; addForm.型式手動 = true; renderSheet(); return; }
+    case 'addSubmit': submitForm(); return;
+    case 'addDelete': deleteCustom(); return;
     case 'rmEntry': { const ei = +t.dataset.e; const nm = session.entries[ei].name;
       withUndo(`已刪除 ${nm}`, () => { session.entries.splice(ei, 1); normalizeGroups(session); }); return; }
     case 'rmCardio': session.cardio.splice(+t.dataset.c, 1); saveSoon(); render(); return;
@@ -1028,8 +1059,16 @@ function onInput(ev) {
   const t = ev.target.closest('[data-inp]'); if (!t) return;
   const kind = t.dataset.inp;
   const v = t.value.trim();
-  if (kind === 'search') { search = v; updatePickList('picklist', liftPool(), session.parts); return; }
-  if (kind === 'hiitSearch') { hiitSearch = v; updatePickList('hiitlist', poolOf('HIIT'), PART_ORDER); return; }
+  if (kind === 'search') { search = v; updatePickList('picklist'); return; }
+  if (kind === 'hiitSearch') { hiitSearch = v; updatePickList('hiitlist'); return; }
+  if (kind === 'cardioSearch') { cardioSearch = v; updatePickList('cardiolist'); return; }
+  // 表單文字欄：只改狀態＋就地更新按鈕／型式字，不重繪（保住游標）
+  if (kind === 'addName') { addForm.name = t.value; const b = document.getElementById('addSubmit'); if (b) b.disabled = !formOk(); return; }
+  if (kind === 'addOther') {
+    const k = t.dataset.f; addForm[k] = t.value;
+    if (k === '器材') { autoXs(); const x = document.getElementById('addXs'); if (x) x.textContent = addForm.型式; }
+    return;
+  }
   if (kind === 'overall') { session.overallNote = t.value; saveSoon(); return; }
   if (kind === 'date') { if (/^\d{4}-\d{2}-\d{2}$/.test(v)) { session.date = v; saveSoon(); } return; }
   if (kind === 'note') { entryOf(t).note = t.value; saveSoon(); return; }
@@ -1044,20 +1083,141 @@ function onInput(ev) {
   if (kind === 'cInt') { session.cardio[+t.dataset.c].intensity = t.value; saveSoon(); return; }
 }
 // 只重繪清單容器，不動搜尋框（保住游標）
-function updatePickList(id, pool, parts) {
-  const el = document.getElementById(id); if (!el) return;
-  const term = (id === 'hiitlist' ? hiitSearch : search).trim();
-  const picked = id === 'hiitlist' ? hiitCounts() : new Set(session.entries.map(e => e.name));
-  if (term) {
-    el.innerHTML = `<div class="sec-title">搜尋結果</div>${exRows(pool.filter(e => (e.name + e.區域 + e.動作型).includes(term)), picked)}`;
-  } else {
-    let body = '';
-    for (const p of parts) {
-      const g = pool.filter(e => e.部位 === p);
-      if (g.length) body += `<div class="sec-title">${p}</div>${exRows(g, picked)}`;
-    }
-    el.innerHTML = body;
+function updatePickList(id) {
+  const el = document.getElementById(id); if (el) el.innerHTML = listBody(id);
+}
+
+/* ---------- 新增／編輯動作（底部表單）---------- */
+const TYPES = ['重訓', 'HIIT', '有氧'];
+const FIELDS = ['區域', '動作型', '器材'];
+const XS_CYCLE = ['半機械式', '機械式', '自由重量', '徒手'];
+const SCREEN_TYPE = { PICK: '重訓', HIIT_SETUP: 'HIIT', CARDIO_PICK: '有氧' };
+const scrType = () => SCREEN_TYPE[session.screen] || '重訓';
+const curTerm = () => session.screen === 'HIIT_SETUP' ? hiitSearch : session.screen === 'CARDIO_PICK' ? cardioSearch : search;
+function clearTerm() {
+  if (session.screen === 'HIIT_SETUP') hiitSearch = '';
+  else if (session.screen === 'CARDIO_PICK') cardioSearch = '';
+  else search = '';
+}
+const formOk = () => !!(addForm && sanitizeName(addForm.name) && addForm.部位 && addForm.型態.length);
+const autoXs = () => { if (!addForm.型式手動) addForm.型式 = guessXingshi(addForm.部位, addForm.器材); };
+
+// 把動作加入本場（依目前畫面）；只加不移除，已在本場就不動
+function addPicked(name) {
+  if (session.screen === 'HIIT_SETUP') curH().items.push({ name, doneRounds: 0, load: null });
+  else if (session.screen === 'CARDIO_PICK') {
+    if (!session.cardio.some(c => c.name === name)) session.cardio.push({ name, minutes: null, km: null, intensity: '' });
+  } else if (sgMode) { if (!sgSel.includes(name) && sgSel.length < 3) sgSel.push(name); }
+  else if (!session.entries.some(e => e.name === name)) { const ex = exByName[name]; if (ex) addEntry(session, ex, history, 'u' + (idc++)); }
+}
+// 新增流程收尾：加入本場 → 清空搜尋字 → 存檔重繪
+function commitPick(name) {
+  addPicked(name); clearTerm();
+  store.saveSession(session); render();
+}
+
+function openAddForm(name) {
+  const 部位 = (session.parts || [])[0] || null;
+  addForm = { mode: 'new', name: sanitizeName(name), 部位, 型態: [scrType()], 區域: '', 動作型: '', 器材: '',
+    型式: guessXingshi(部位, ''), 型式手動: false, other: { 區域: false, 動作型: false, 器材: false } };
+}
+function openEditForm(c) {
+  const opts = fieldOptions(exercises, c.部位);
+  const other = {};
+  for (const k of FIELDS) other[k] = !!c[k] && !opts[k].includes(c[k]);
+  addForm = { mode: 'edit', oldName: c.name, name: c.name, 部位: c.部位, 型態: [...c.型態],
+    區域: c.區域 || '', 動作型: c.動作型 || '', 器材: c.器材 || '',
+    型式: c.型式, 型式手動: c.型式 !== guessXingshi(c.部位, c.器材), other };
+}
+// 切部位：選項重算，清掉不在新選項中的點選值（「其他」手打的保留）
+function setFormPart(p) {
+  addForm.部位 = p;
+  const opts = fieldOptions(exercises, p);
+  for (const k of FIELDS) if (!addForm.other[k] && addForm[k] && !opts[k].includes(addForm[k])) addForm[k] = '';
+  autoXs();
+}
+
+// 快速新增：部位＝本場第一個部位、型態＝目前畫面；本場沒部位（純 HIIT／有氧場）改開完整表單
+function quickAdd() {
+  const name = sanitizeName(curTerm());
+  if (!name) return;
+  const 部位 = (session.parts || [])[0];
+  if (!部位) { openAddForm(name); renderSheet(); return; }
+  const ex = findExisting(exercises, name);
+  if (!ex && !Object.hasOwn(customs, name)) {
+    customs[name] = makeCustom({ name, 部位, 型態: [scrType()] }); saveCustoms(); rebuildIndex();
   }
+  commitPick(ex ? ex.name : name);
+}
+
+function submitForm() {
+  const f = addForm; if (!formOk()) return;
+  const name = sanitizeName(f.name);
+  const fields = { 部位: f.部位, 型態: TYPES.filter(t => f.型態.includes(t)),
+    區域: sanitizeName(f.區域), 動作型: sanitizeName(f.動作型), 器材: sanitizeName(f.器材), 型式: f.型式 };
+  if (f.mode === 'new') {
+    // 與正式庫（或既有新動作）同名 → 不新建，直接選那個
+    const ex = findExisting(exercises, name) || (Object.hasOwn(customs, name) ? customs[name] : null);
+    addForm = null;
+    if (ex) toast(`已有此動作：${ex.name}`);
+    else { customs[name] = makeCustom({ name, ...fields }); saveCustoms(); rebuildIndex(); }
+    commitPick(ex ? ex.name : name);
+    return;
+  }
+  // 編輯：改名要連本場與本機 history 一起換
+  const old = f.oldName;
+  if (!Object.hasOwn(customs, old)) { addForm = null; render(); return; }
+  if (name !== old) {
+    if (findExisting(exercises, name)) { toast(`正式庫已有「${name}」，不能用這個名字`); return; }
+    if (!renameCustom(customs, old, name)) { toast(`已有同名動作：${name}`); return; }
+    applyRenames(session, history, { [old]: name });
+    sgSel = sgSel.map(n => n === old ? name : n);
+    store.saveHistory(history);
+  }
+  const c = Object.assign(customs[name], fields);
+  for (const e of session.entries) if (e.name === name) { e.部位 = c.部位; e.型式 = c.型式; }   // 本場動作行的型式跟著改
+  saveCustoms(); rebuildIndex(); store.saveSession(session);
+  addForm = null; toast('已更新'); render();
+}
+
+function deleteCustom() {
+  const n = addForm.oldName;
+  const used = session.entries.some(e => e.name === n) || session.hiits.some(g => g.items.some(i => i.name === n))
+    || session.cardio.some(c => c.name === n) || sgSel.includes(n);
+  if (used) { toast('本場已使用，請先從本場移除'); return; }
+  addForm = null;
+  withUndo(`已刪除 ${n}`, () => { delete customs[n]; });
+}
+
+// 表單只在使用者操作時整塊重繪（不跟 ticker）；掛在 #app 內，共用事件委派
+function renderSheet() {
+  let el = document.getElementById('addsheet');
+  if (!addForm) { if (el) el.remove(); return; }
+  if (!el) { el = document.createElement('div'); el.id = 'addsheet'; app.appendChild(el); }
+  const f = addForm, edit = f.mode === 'edit';
+  const opts = f.部位 ? fieldOptions(exercises, f.部位) : { 區域: [], 動作型: [], 器材: [] };
+  const chip = (label, on, act, attrs, cls = '') => `<span class="chip${cls}${on ? ' on' : ''}" data-act="${act}" ${attrs}>${esc(label)}</span>`;
+  const pre = ok => (!edit && ok) ? '<i>已預選</i>' : '';
+  const field = k => `<div class="lbl">${k}${f.部位 ? `（只列「${f.部位}」用過的）` : '（先選部位）'}</div>
+    <div class="chips">${opts[k].map(v => chip(v, !f.other[k] && f[k] === v, 'addField', `data-f="${k}" data-v="${esc(v)}"`)).join('')}${
+      chip('＋其他', f.other[k], 'addOther', `data-f="${k}"`, ' other')}</div>
+    ${f.other[k] ? `<input class="other-inp" data-inp="addOther" data-f="${k}" value="${esc(f[k])}" placeholder="輸入${k}">` : ''}`;
+  el.innerHTML = `<div class="sheet-dim" data-act="addCancel"></div>
+  <div class="sheet">
+    <div class="sheet-title">${edit ? '編輯動作' : '新增動作'}</div>
+    <input data-inp="addName" placeholder="動作名稱，如 單腿 臀推 史密斯" value="${esc(f.name)}">
+    <div class="lbl">部位${pre(f.部位 && f.部位 === (session.parts || [])[0])}</div>
+    <div class="chips">${PART_ORDER.map(p => chip(p, f.部位 === p, 'addPart', `data-v="${p}"`)).join('')}</div>
+    <div class="lbl">型態（可多選）${pre(f.型態.length === 1 && f.型態[0] === scrType())}</div>
+    <div class="chips">${TYPES.map(t => chip(t, f.型態.includes(t), 'addType', `data-v="${t}"`)).join('')}</div>
+    ${FIELDS.map(field).join('')}
+    <div class="xs" data-act="addXs">型式：<b id="addXs">${esc(f.型式)}</b>（${f.型式手動 ? '已手動指定' : '依器材自動帶'}，點此改）</div>
+    <div class="row sheet-bar">
+      ${edit ? '<button class="ghost danger" data-act="addDelete">刪除此動作</button>' : ''}
+      <button class="ghost" data-act="addCancel">取消</button>
+      <button class="primary" id="addSubmit" data-act="addSubmit" ${formOk() ? '' : 'disabled'}>${edit ? '儲存' : '加入並開始記'}</button>
+    </div>
+  </div>`;
 }
 
 const DEFAULT_HIIT = () => ({ workSec: 20, restSec: 10, rounds: 1, roundRestSec: 60 });
