@@ -81,7 +81,7 @@ pre.md { white-space: pre-wrap; word-break: break-word; background: var(--bg); b
   border-radius: 8px; padding: 10px; font-size: 12px; line-height: 1.5; max-height: 46vh; overflow: auto; }
 .note-input { margin-top: 6px; }
 .toast { position: fixed; left: 50%; bottom: 90px; transform: translateX(-50%); background: var(--good);
-  color: #06210f; padding: 10px 16px; border-radius: 999px; font-weight: 600; z-index: 20; }
+  color: #06210f; padding: 10px 16px; border-radius: 999px; font-weight: 600; z-index: 500; }
 
 /* 上次組數／歷史紀錄 */
 .lastsets { color: var(--muted); font-size: 12px; margin: 1px 0 3px; line-height: 1.45; }
@@ -162,3 +162,32 @@ body:has(#app.run-round) { background: #0f1e33; }
   box-shadow: 0 8px 22px rgba(0,0,0,.6); font-size: 14px; }
 .undo span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .undo button { background: var(--accent); border-color: var(--accent); color: #0b1622; font-weight: 600; border-radius: 999px; }
+
+/* 新增動作：搜尋列常駐鈕、清單新增鈕、待確認標記 */
+.searchrow input { flex: 1; min-width: 0; }
+.searchrow button { white-space: nowrap; }
+.ex-item.addrow { border: 1.5px dashed var(--accent); color: var(--accent); background: transparent; cursor: pointer; }
+.ex-item.addrow b { color: var(--fg); font-weight: 600; }
+.ex-item.addrow.full { border-style: dotted; }
+.new { font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--warn); color: #111; margin-left: -4px; white-space: nowrap; }
+button.editbtn { padding: 3px 8px; }
+button.danger { color: var(--danger); border-color: var(--danger); }
+
+/* 新增／編輯動作底部表單 */
+.sheet-dim { position: fixed; inset: 0; background: rgba(0,0,0,.6); z-index: 400; }
+.sheet { position: fixed; left: 0; right: 0; bottom: 0; z-index: 410; max-width: 560px; margin: 0 auto;
+  max-height: 88vh; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain;
+  background: var(--card); border-top: 1px solid var(--line); border-radius: 16px 16px 0 0;
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom)); box-shadow: 0 -10px 30px rgba(0,0,0,.5); }
+.sheet-title { font-weight: 600; margin-bottom: 8px; }
+.sheet .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.sheet .chip { padding: 6px 11px; font-size: 14px; }
+.chip.other { border-style: dashed; color: var(--muted); }
+.chip.other.on { color: #0b1622; }
+.lbl { font-size: 12px; color: var(--muted); margin: 11px 0 5px; display: flex; justify-content: space-between; }
+.lbl i { font-style: normal; color: var(--good); }
+.other-inp { margin-top: 6px; }
+.xs { font-size: 13px; color: var(--muted); margin-top: 12px; cursor: pointer; }
+.xs b { color: var(--fg); font-weight: 600; }
+.sheet-bar { margin-top: 14px; }
+.sheet-bar button { flex: 1; }

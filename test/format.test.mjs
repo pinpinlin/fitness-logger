@@ -7,6 +7,7 @@ import {
   exerciseLine, frontmatterParts, buildMd,
   hiitTotalSeconds, fmtDuration, hiitLine, cardioLine, sessionTypes
 } from '../lib/format.js';
+import { makeCustom, sanitizeField } from '../lib/custom.js';
 
 const rd = f => readFileSync(fileURLToPath(new URL('../' + f, import.meta.url)), 'utf8');
 const summaryBlock = rd('summary-block.txt');
@@ -242,4 +243,63 @@ test('改 session.date 後 fileName 與 buildMd 三處同步反映', () => {
   assert.ok(md.includes('date: 2026-08-18'), 'frontmatter 的 date 要是新日期');
   assert.ok(md.includes('# 2026-08-18-重訓-胸臂'), 'H1 要是新日期');
   assert.ok(!md.includes('2026-08-17'), '不得殘留舊日期');
+});
+
+/* ── 計畫六：新動作標記 ── */
+test('exerciseLine：新動作行尾加標記，在備註之後', () => {
+  const c = makeCustom({ name: 'N', 部位: '腿', 器材: '史密斯' });
+  const line = exerciseLine({ name: 'N', 型式: '半機械式', sets: [{ weight: 40, reps: 8, rpe: null }], note: '慢放' }, c);
+  assert.equal(line, '[[N]] (型式:: 半機械式) (組:: 40×8) (備註:: 慢放) (新動作:: 部位=腿; 型態=重訓; 器材=史密斯)');
+});
+
+test('buildMd：customs 只標記新動作，其他行不變；不傳 customs 與舊行為相同', () => {
+  const session = {
+    date: '2026-08-06', parts: ['腿', '胸'], overallNote: '',
+    entries: [
+      { name: '中胸 胸推機', 型式: '機械式', note: '', sets: [{ weight: 50, reps: 10, rpe: 8 }] },
+      { name: 'N', 型式: '自由重量', note: '', sets: [{ weight: 30, reps: 12, rpe: null }] }
+    ]
+  };
+  const customs = { N: makeCustom({ name: 'N', 部位: '腿' }) };
+  const md = buildMd(session, blocks, customs);
+  const dataLines = md.split('\n').filter(l => l.startsWith('[['));
+  assert.equal(dataLines.length, 2);
+  const nLine = dataLines.find(l => l.startsWith('[[N]]'));
+  assert.ok(nLine.endsWith('(新動作:: 部位=腿; 型態=重訓)'));
+  const other = dataLines.find(l => l.startsWith('[[中胸 胸推機]]'));
+  assert.ok(!other.includes('新動作'));
+  assert.equal(buildMd(session, blocks), buildMd(session, blocks, {}));
+  assert.ok(!buildMd(session, blocks).includes('新動作::'), '不傳 customs 不得出現標記');
+});
+
+test('buildMd：HIIT／有氧行也帶 customs 標記', () => {
+  const session = {
+    date: '2026-08-10', parts: ['核心'], overallNote: '', entries: [],
+    hiit: { params: { workSec: 20, restSec: 10, rounds: 3, roundRestSec: 60 }, items: [{ name: 'H', doneRounds: 3, load: null }] },
+    cardio: [{ name: 'K', minutes: 20 }]
+  };
+  const customs = {
+    H: makeCustom({ name: 'H', 部位: '核心', 型態: ['HIIT'] }),
+    K: makeCustom({ name: 'K', 部位: '腿', 型態: ['有氧'] })
+  };
+  const lines = buildMd(session, blocks, customs).split('\n');
+  assert.ok(lines.includes('[[H]] (型態:: HIIT) (完成:: 3輪) (新動作:: 部位=核心; 型態=HIIT)'));
+  assert.ok(lines.includes('[[K]] (型態:: 有氧) (時間:: 20分) (新動作:: 部位=腿; 型態=有氧)'));
+});
+
+test('hiitLine／cardioLine：新動作同樣加標記', () => {
+  const c = makeCustom({ name: 'H', 部位: '核心', 型態: ['HIIT'] });
+  assert.equal(hiitLine({ name: 'H', doneRounds: 3, load: null }, null, c), '[[H]] (型態:: HIIT) (完成:: 3輪) (新動作:: 部位=核心; 型態=HIIT)');
+  const k = makeCustom({ name: 'K', 部位: '腿', 型態: ['有氧'] });
+  assert.equal(cardioLine({ name: 'K', minutes: 20 }, k), '[[K]] (型態:: 有氧) (時間:: 20分) (新動作:: 部位=腿; 型態=有氧)');
+});
+
+test('新動作標記：手打欄位含 ; = ( ) 清理後，標記仍是乾淨的 key=value 對', () => {
+  const c = makeCustom({ name: 'N', 部位: '腿', 型態: ['重訓', 'HIIT'],
+    區域: sanitizeField('臀(上)'), 動作型: sanitizeField('臀推;單腿'), 器材: sanitizeField('史密斯=機') });
+  const line = exerciseLine({ name: 'N', 型式: '半機械式', sets: [{ weight: 40, reps: 8 }] }, c);
+  const tag = line.match(/\(新動作:: (.*)\)$/)[1];
+  assert.deepEqual(tag.split('; ').map(p => p.split('=')), [
+    ['部位', '腿'], ['型態', '重訓、HIIT'], ['區域', '臀（上）'], ['動作型', '臀推；單腿'], ['器材', '史密斯＝機']
+  ]);
 });
