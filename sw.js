@@ -1,7 +1,7 @@
 // sw.js — 離線快取。版號 CACHE 只在【程式】改動時 bump（功能版本）；每日資料不 bump。
 //   程式（SHELL 其餘檔案）：cache-first，離線秒開。
 //   資料（DATA）：network-first，3 秒內抓到就用最新並寫回快取；沒網路／太慢 → 用上次快取。
-const CACHE = 'fl-v43';
+const CACHE = 'fl-v44';
 const DATA = [
   'exercises.json', 'history.json', 'version.json',
   'summary-block.txt', 'summary-hiit-block.txt', 'summary-cardio-block.txt',
